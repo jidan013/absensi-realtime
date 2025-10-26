@@ -1,8 +1,8 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
-import { DarkModeProvider } from "@/components/home/dark-mode";
 import Navbar from "@/components/home/home-navbar";
+import { DarkModeProvider } from "@/components/home/dark-mode";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -21,19 +21,17 @@ export const metadata: Metadata = {
 
 export default function RootLayout({
   children,
-}: Readonly<{
+}: {
   children: React.ReactNode;
-}>) {
+}) {
   return (
     <html lang="en">
-      <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
-      >
-      </body>
-      <DarkModeProvider>
-        <Navbar />
-        {children}
+      <body className={`${geistSans.variable} ${geistMono.variable} antialiased`} suppressHydrationWarning>
+        {/* ✅ Semua halaman selain `/login` dibungkus provider */}
+        <DarkModeProvider>
+          {children}
         </DarkModeProvider>
+      </body>
     </html>
   );
 }
