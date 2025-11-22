@@ -1,6 +1,10 @@
+import AbsensiClient from "./components/AbsensiClient";
 
 export default function page() {
   return (
-    <div>page</div>
+    <div>
+      <AbsensiClient />
+
+    </div>
   )
 }
