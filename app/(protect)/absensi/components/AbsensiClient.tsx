@@ -24,6 +24,8 @@ import Confetti from "react-confetti";
 import { Toaster, toast } from "sonner";
 import { useWindowSize } from "react-use";
 import Image from "next/image";
+import { Footer } from "react-day-picker";
+import FooterClient from "@/components/layouts/Footer";
 
 interface Coordinates {
   lat: number | null;
@@ -273,9 +275,9 @@ export default function AbsensiClient() {
           {/* Header */}
           <motion.div className="text-center mb-10" initial={{ y: -40 }} animate={{ y: 0 }}>
             <h1 className="text-6xl md:text-7xl font-black bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 bg-clip-text text-transparent">
-              Absensi Pro
+              Absensi Realtime
             </h1>
-            <p className="mt-4 text-xl text-gray-600 dark:text-gray-400 font-medium">Verifikasi kehadiran • Real-time • Tanpa kompromi</p>
+            <p className="mt-4 text-xl text-gray-600 dark:text-gray-400 font-medium">Verifikasi kehadiran • Real-time</p>
           </motion.div>
 
           {/* Card */}
@@ -337,7 +339,7 @@ export default function AbsensiClient() {
                         <div className="w-10 h-10 rounded-full bg-gradient-to-r from-purple-500 to-pink-500 flex items-center justify-center">
                           <Camera className="w-6 h-6 text-white" />
                         </div>
-                        Capture (Space)
+                        Capture
                       </button>
 
                       <label className="px-8 py-5 bg-white dark:bg-gray-900 border-2 border-gray-300 dark:border-gray-700 rounded-2xl font-bold text-lg cursor-pointer hover:shadow-lg flex items-center justify-center gap-3">
@@ -422,26 +424,27 @@ export default function AbsensiClient() {
                     ) : (
                       <>
                         <Send className="w-8 h-8" />
-                        Kirim Absensi (Ctrl+Enter)
+                        Kirim Absensi 
                       </>
                     )}
                   </button>
 
                   <button type="button" onClick={resetForm} className="px-10 py-6 bg-gray-100 dark:bg-gray-800 border-2 border-gray-300 dark:border-gray-700 text-gray-700 dark:text-gray-300 font-bold text-lg rounded-2xl hover:bg-gray-200 dark:hover:bg-gray-700 transition-all">
-                    Reset (Esc)
+                    Reset
                   </button>
                 </div>
               </form>
 
               <div className="mt-12 text-center text-gray-500 dark:text-gray-400">
-                <p className="text-sm">
-                  Gunakan <kbd className="px-2 py-1 bg-gray-200 dark:bg-gray-800 rounded">Space</kbd> untuk capture • <kbd className="px-2 py-1 bg-gray-200 dark:bg-gray-800 rounded">Ctrl+Enter</kbd> untuk kirim • <kbd className="px-2 py-1 bg-gray-200 dark:bg-gray-800 rounded">Esc</kbd> untuk reset
+                <p>
+                  Izinkan Akses <b>Kamera</b> dan <b>Lokasi</b> untuk mengirimkan absensi.
                 </p>
               </div>
             </div>
           </div>
         </motion.div>
       </div>
+      <FooterClient />
     </>
   );
 }
