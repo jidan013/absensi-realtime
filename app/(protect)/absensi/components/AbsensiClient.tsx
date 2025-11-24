@@ -24,7 +24,6 @@ import Confetti from "react-confetti";
 import { Toaster, toast } from "sonner";
 import { useWindowSize } from "react-use";
 import Image from "next/image";
-import { Footer } from "react-day-picker";
 import FooterClient from "@/components/layouts/Footer";
 
 interface Coordinates {

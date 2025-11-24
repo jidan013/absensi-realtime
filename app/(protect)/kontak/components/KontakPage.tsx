@@ -23,7 +23,6 @@ export default function KontakPage() {
     });
     const [isSubmitting, setIsSubmitting] = useState(false);
 
-    // Auto-focus nama saat masuk halaman
     useEffect(() => {
         nameRef.current?.focus();
     }, []);
@@ -44,8 +43,7 @@ export default function KontakPage() {
         setIsSubmitting(true);
 
         try {
-            // Ganti dengan API kamu nanti (misal /api/contact)
-            await new Promise((resolve) => setTimeout(resolve, 1800)); // simulasi
+            await new Promise((resolve) => setTimeout(resolve, 1800));
 
             toast.success("Pesan berhasil dikirim! Kami akan segera menghubungi kamu.", {
                 duration: 6000,

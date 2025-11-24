@@ -38,7 +38,7 @@ export default function LoginForm({ className, ...props }: React.ComponentProps<
     if (userExists) {
       setMessage({ type: "success", text: "Login berhasil! Mengarahkan..." })
       setTimeout(() => {
-        router.push("/") // Redirect setelah 1.5 detik
+        router.push("/")
       }, 1500)
     } else {
       setMessage({ type: "error", text: "Email atau password salah!" })
