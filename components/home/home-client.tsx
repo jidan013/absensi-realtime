@@ -1,18 +1,15 @@
-// app/page.tsx
 "use client";
 
 import Image from "next/image";
 import Foto from "@/public/image.jpg";
-import { DataTableDemo } from "./home-table";
-import { Button } from "@/components/ui/button";
+import  DataTableDemo  from "./home-table";
 import Link from "next/link";
-import { useEffect, useState, useContext, useRef, useMemo } from "react";
+import { useEffect, useState, useRef, useMemo } from "react";
 import { motion, Variants } from "framer-motion";
-import { 
+import {
   Zap, Shield, Users, BarChart3, Clock, ArrowRight, Mail, Phone,
   Calendar, Activity, Globe, ChevronDown, Star
 } from "lucide-react";
-import { DarkModeContext } from "@/components/home/dark-mode";
 
 // === VARIANTS (Ringan) ===
 const slideUp: Variants = {
@@ -77,19 +74,16 @@ function HeroSection() {
             </h1>
 
             <p className="text-base md:text-lg text-gray-300 max-w-xl leading-relaxed">
-              Santai aja. Absen pake AI — cepat, akurat, dan bikin HR nggak pusing lagi.
+              Sistem absensi berbasis web yang responsif dan akurat untuk mendukung pencatatan waktu kerja secara real-time.
             </p>
 
             <div className="flex flex-col sm:flex-row gap-4">
-              <Button className="bg-gradient-to-r from-cyan-400 to-blue-500 text-white font-bold px-8 py-6 rounded-xl hover:shadow-lg transform hover:scale-105 transition-all duration-300 text-base md:text-lg group">
-                <span className="flex items-center gap-3">
+              <Link href="/absensi" className="bg-gradient-to-r from-cyan-400 to-blue-500 text-white font-bold px-8 py-3 rounded-xl hover:shadow-lg transform hover:scale-105 transition-all duration-300 text-base md:text-lg group">
+                <span className="flex items-center">
                   Coba
                   <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition" />
                 </span>
-              </Button>
-              <Button variant="outline" className="border-2 border-white/30 text-black px-8 py-6 rounded-xl font-bold hover:bg-white/10 transform hover:scale-105 transition-all duration-300 text-base md:text-lg">
-                Lihat Demo
-              </Button>
+              </Link>
             </div>
 
             <div className="flex flex-wrap gap-4 pt-4">
@@ -142,18 +136,18 @@ function HeroSection() {
               <div className="grid grid-cols-3 gap-4 mt-6">
                 {[{ label: "Hadir", percent: 98, color: "from-emerald-400 to-teal-400" }, { label: "Terlambat", percent: 1, color: "from-amber-400 to-orange-400" }, { label: "Absen", percent: 1, color: "from-rose-400 to-pink-400" }].
 
-map((stat, i) => (
-                  <div key={i} className="bg-white/5 rounded-xl p-3 border border-white/10">
-                    <p className="text-gray-300 text-xs font-medium">{stat.label}</p>
-                    <div className="h-2 bg-white/10 rounded-full overflow-hidden mt-1">
-                      <div
-                        className={`h-full bg-gradient-to-r ${stat.color}`}
-                        style={{ width: `${stat.percent}%` }}
-                      />
+                  map((stat, i) => (
+                    <div key={i} className="bg-white/5 rounded-xl p-3 border border-white/10">
+                      <p className="text-gray-300 text-xs font-medium">{stat.label}</p>
+                      <div className="h-2 bg-white/10 rounded-full overflow-hidden mt-1">
+                        <div
+                          className={`h-full bg-gradient-to-r ${stat.color}`}
+                          style={{ width: `${stat.percent}%` }}
+                        />
+                      </div>
+                      <p className="text-white font-bold text-lg mt-1">{stat.percent}%</p>
                     </div>
-                    <p className="text-white font-bold text-lg mt-1">{stat.percent}%</p>
-                  </div>
-                ))}
+                  ))}
               </div>
             </div>
           </div>
@@ -172,7 +166,6 @@ map((stat, i) => (
 
 // === MAIN COMPONENT ===
 export default function HomeClient() {
-  const { darkMode } = useContext(DarkModeContext) || { darkMode: false };
   const [counts, setCounts] = useState([0, 0, 0]);
   const [openFaq, setOpenFaq] = useState<number | null>(null);
   const [isMounted, setIsMounted] = useState(false);
@@ -209,8 +202,8 @@ export default function HomeClient() {
   if (!isMounted) return <div className="min-h-screen bg-gradient-to-br from-gray-900 to-black" />;
 
   return (
-    <div className={`min-h-screen transition-colors duration-500 ${darkMode ? 'bg-gray-950 text-white' : 'bg-gradient-to-br from-gray-50 via-white to-gray-50 text-gray-900'} overflow-x-hidden`}>
-      
+    <div className={`min-h-screen transition-colors duration-500  overflow-x-hidden`}>
+
       {/* HERO */}
       <HeroSection />
 
@@ -354,9 +347,9 @@ export default function HomeClient() {
       <section className="py-20 md:py-32 px-4 sm:px-6 lg:px-8 bg-gradient-to-br from-gray-900 via-indigo-950 to-black text-center">
         <div className="max-w-4xl mx-auto">
           <h2 className="text-4xl md:text-7xl font-bold text-white mb-8">Siap Bikin Absen Jadi Santai?</h2>
-          <Button className="bg-gradient-to-r from-cyan-400 to-blue-500 text-white font-bold px-12 py-8 rounded-xl text-xl hover:shadow-lg transform hover:scale-105 transition-all duration-300">
+          <Link href="/absensi" className="bg-gradient-to-r from-cyan-400 to-blue-500 text-white font-bold px-6 py-4 rounded-xl text-xl hover:shadow-lg transform hover:scale-105 transition-all duration-300">
             Mulai Absen Sekarang
-          </Button>
+          </Link>
         </div>
       </section>
 

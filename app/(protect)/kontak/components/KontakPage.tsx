@@ -211,8 +211,8 @@ export default function KontakPage() {
                                                 Alamat Kantor
                                             </p>
                                             <p className="text-xl font-bold text-gray-900 dark:text-white leading-relaxed">
-                                                PT PAL Indonesia (persero) <br />
-                                                Jl. Ujung Surabaya Surabaya 60155 Indonesia
+                                                Ruko Manyar Mas, Jl. Raya Manyar No.27 C1 <br />
+                                                 Menur Pumpungan, Kec. Sukolilo, Surabaya, Jawa Timur 60118
                                             </p>
                                         </div>
                                     </div>

@@ -2,21 +2,17 @@
 
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
-import { useEffect, useState, useContext } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { DarkModeContext } from "@/components/home/dark-mode";
-import { 
-  Menu, 
-  X, 
-  Sun, 
-  Moon, 
-  LogOut, 
-  User, 
-  Settings, 
+import {
+  Menu,
+  X,
+  User,
+  Settings,
   ChevronDown,
   Activity,
-  LogIn
+  LogOut
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
@@ -31,26 +27,25 @@ export default function Navbar() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
 
-  const darkModeContext = useContext(DarkModeContext);
-  if (!darkModeContext) throw new Error("Navbar harus dibungkus dalam <DarkModeProvider />");
-  const { darkMode, setDarkMode } = darkModeContext;
-
   useEffect(() => {
     const email = localStorage.getItem("userEmail");
     setUser(email);
   }, []);
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
     setLoading(true);
     setMessage({ type: "success", text: "Berhasil logout! Mengarahkan ke login..." });
+
+    localStorage.removeItem("userEmail");
+    setUser(null);
+
     setTimeout(() => {
-      localStorage.removeItem("userEmail");
-      setUser(null);
       setLoading(false);
       setProfileOpen(false);
       setMenuOpen(false);
       router.push("/login");
-    }, 1200);
+      router.refresh();
+    }, 1500);
   };
 
   const navItems = [
@@ -61,7 +56,7 @@ export default function Navbar() {
 
   return (
     <>
-      {/* Ultra Premium Animations & Effects */}
+      {/* Animations & Effects */}
       <style jsx>{`
         @keyframes float3D {
           0%, 100% { transform: translateY(0) rotateX(0deg) rotateY(0deg); }
@@ -91,23 +86,17 @@ export default function Navbar() {
         .ripple:active::before { animation: ripple 0.6s ease-out; }
       `}</style>
 
-      <nav
-        className={`sticky top-0 z-50 flex justify-between items-center px-4 sm:px-8 md:px-12 lg:px-16 py-4 sm:py-5 border-b backdrop-blur-3xl transition-all duration-700 shadow-md ${
-          darkMode 
-            ? "bg-gray-950/95 border-gray-900/50 text-gray-50" 
-            : "bg-white/95 border-gray-100/50 text-gray-950"
-        }`}
-      >
-        {/* Logo - 3D Float + Dynamic Glow */}
-        <Link href="/" className="group relative perspective-1000">
-          <motion.div 
+      <nav className="sticky top-0 z-50 flex justify-between items-center px-4 sm:px-8 md:px-12 lg:px-16 py-4 sm:py-5 border-b backdrop-blur-3xl transition-all duration-700 shadow-md bg-white/80">
+        {/* Logo */}
+        <Link href="/" className="group relative">
+          <motion.div
             className="flex items-center gap-1 animate-float3D"
             whileHover={{ scale: 1.1, rotateY: 10, rotateX: 5 }}
             transition={{ type: "spring", stiffness: 300, damping: 15 }}
           >
             <span className="text-2xl sm:text-3xl font-extrabold tracking-tight">
               RAD
-              <motion.span 
+              <motion.span
                 className="text-transparent bg-clip-text bg-gradient-to-r from-blue-600 to-cyan-300"
                 animate={{ backgroundPosition: ["0%", "100%"] }}
                 transition={{ duration: 2.5, repeat: Infinity, ease: "linear" }}
@@ -116,16 +105,16 @@ export default function Navbar() {
                 .
               </motion.span>
             </span>
-            <motion.div 
+            <motion.div
               className="absolute -inset-4 bg-gradient-to-r from-blue-600/30 to-cyan-300/30 rounded-full blur-3xl opacity-0 group-hover:opacity-100 transition-opacity duration-500 animate-pulseGlow"
             />
           </motion.div>
         </Link>
 
-        {/* Desktop Navigation - Ripple Hover + Underline */}
+        {/* Desktop Navigation */}
         <ul className="hidden lg:flex items-center gap-2 xl:gap-4">
           {navItems.map((item, i) => (
-            <motion.li 
+            <motion.li
               key={i}
               initial={{ opacity: 0, y: -25 }}
               animate={{ opacity: 1, y: 0 }}
@@ -142,7 +131,7 @@ export default function Navbar() {
                   whileHover={{ scaleX: 1 }}
                   transition={{ duration: 0.5, ease: "easeOut" }}
                 />
-                <motion.span 
+                <motion.span
                   className="absolute inset-0 rounded-xl bg-gradient-to-r from-blue-600/5 to-cyan-300/5 opacity-0 group-hover:opacity-100 transition-opacity duration-300"
                   initial={{ scale: 0.9 }}
                   whileHover={{ scale: 1.05 }}
@@ -152,45 +141,23 @@ export default function Navbar() {
           ))}
         </ul>
 
-        {/* Right Actions - Responsive Gap */}
-        <div className="flex items-center gap-2 sm:gap-3 md:gap-4">
-          {/* Dark Mode Toggle - Flip Animation */}
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => setDarkMode(!darkMode)}
-            className="rounded-full w-10 h-10 sm:w-11 sm:h-11 backdrop-blur-2xl hover:bg-white/10 dark:hover:bg-gray-800/50 transition-all duration-300"
-          >
-            <motion.div
-              initial={false}
-              animate={{ rotateY: darkMode ? 180 : 0 }}
-              transition={{ duration: 0.5, ease: "easeInOut" }}
-              className="perspective-1000"
-            >
-              {darkMode ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
-            </motion.div>
-          </Button>
-
-          {/* User Profile Dropdown - Avatar + Status + Ultra Menu */}
+        <div className="flex items-center gap-3">
+          {/* User Profile Dropdown */}
           {user ? (
             <div className="relative">
               <button
                 onClick={() => setProfileOpen(!profileOpen)}
-                className="flex items-center gap-2 sm:gap-3 px-3 sm:px-4 py-2 rounded-full backdrop-blur-3xl border transition-all duration-300 hover:shadow-2xl group"
-                style={{
-                  background: darkMode ? "rgba(255,255,255,0.1)" : "rgba(0,0,0,0.08)",
-                  borderColor: darkMode ? "rgba(255,255,255,0.2)" : "rgba(0,0,0,0.15)"
-                }}
+                className="flex items-center gap-2 sm:gap-3 px-3 sm:px-4 py-2 rounded-full backdrop-blur-3xl border border-gray-200/50 transition-all duration-300 hover:shadow-2xl group bg-white/50"
               >
                 <div className="relative">
                   <div className="w-8 h-8 sm:w-10 sm:h-10 bg-gradient-to-br from-blue-600 to-cyan-300 rounded-full flex items-center justify-center text-white font-bold text-xs sm:text-sm shadow-md">
                     {user.charAt(0).toUpperCase()}
                   </div>
-                  <motion.div 
+                  <motion.div
                     className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-green-400 rounded-full border-2 border-white animate-pulseGlow"
                   />
                 </div>
-                <span className="hidden sm:block text-sm font-semibold">{user.split("@")[0]}</span>
+                <span className="hidden sm:block text-sm font-semibold max-w-32 truncate">{user.split("@")[0]}</span>
                 <ChevronDown className="w-4 h-4 transition-transform duration-400 group-hover:rotate-180" />
               </button>
 
@@ -201,14 +168,12 @@ export default function Navbar() {
                     animate={{ opacity: 1, y: 0, scale: 1 }}
                     exit={{ opacity: 0, y: -15, scale: 0.92 }}
                     transition={{ type: "spring", stiffness: 500, damping: 35 }}
-                    className={`absolute right-0 mt-4 w-64 sm:w-72 rounded-3xl shadow-3xl overflow-hidden backdrop-blur-3xl border ${
-                      darkMode ? "bg-gray-800/98 border-gray-700/50" : "bg-white/98 border-gray-200/50"
-                    }`}
+                    className="absolute right-0 mt-4 w-64 sm:w-72 rounded-3xl shadow-3xl overflow-hidden backdrop-blur-3xl border border-gray-200/50 bg-white/90"
                   >
-                    <div className="p-4 sm:p-5 border-b border-gray-200/30 dark:border-gray-700/30">
-                      <p className="text-sm font-bold text-gray-900 dark:text-white">{user}</p>
-                      <p className="text-xs opacity-70 flex items-center gap-1 mt-1">
-                        <Activity className="w-3.5 h-3.5 text-green-500 animate-pulse" />
+                    <div className="p-4 sm:p-5 border-b border-gray-200/30 bg-gray-50/50">
+                      <p className="text-sm font-bold text-gray-900 truncate">{user}</p>
+                      <p className="text-xs opacity-70 flex items-center gap-1 mt-1 text-green-600">
+                        <Activity className="w-3.5 h-3.5 animate-pulse" />
                         Online Sekarang
                       </p>
                     </div>
@@ -220,27 +185,21 @@ export default function Navbar() {
                         <Link
                           key={i}
                           href={item.href}
-                          className={`flex items-center gap-3 px-4 py-3 rounded-2xl transition-all duration-300 ${
-                            darkMode ? "hover:bg-gray-700/70" : "hover:bg-gray-100/70"
-                          }`}
+                          className="flex items-center gap-3 px-4 py-3 rounded-2xl transition-all duration-300 hover:bg-gray-100"
                           onClick={() => setProfileOpen(false)}
                         >
-                          <item.icon className="w-5 h-5 text-blue-500" />
+                          <item.icon className="w-5 h-5 text-blue-500 flex-shrink-0" />
                           <span className="text-sm font-medium">{item.label}</span>
                         </Link>
                       ))}
                       <button
                         onClick={handleLogout}
                         disabled={loading}
-                        className={`flex items-center gap-3 w-full px-4 py-3 rounded-2xl transition-all duration-300 ${
-                          darkMode 
-                            ? "hover:bg-red-900/40 text-red-400" 
-                            : "hover:bg-red-50/70 text-red-600"
-                        }`}
+                        className="flex items-center gap-3 w-full px-4 py-3 rounded-2xl transition-all duration-300 hover:bg-red-50 disabled:opacity-50 disabled:cursor-not-allowed group bg-red-50/80 border border-red-200"
                       >
-                        <LogOut className="w-5 h-5" />
-                        <span className="text-sm font-medium">
-                          {loading ? "Keluar..." : "Logout"}
+                        <LogOut className={`w-5 h-5 ${loading ? 'animate-spin' : 'group-hover:-translate-x-1 transition-transform'}`} />
+                        <span className="text-sm font-medium text-red-700">
+                          {loading ? "Mengarahkan..." : "Logout"}
                         </span>
                       </button>
                     </div>
@@ -249,18 +208,21 @@ export default function Navbar() {
               </AnimatePresence>
             </div>
           ) : (
-            <Button
-              onClick={() => router.push("/login")}
-              className="bg-gradient-to-r from-blue-600 to-cyan-500 text-white font-bold px-5 sm:px-7 py-2 rounded-full shadow-lg hover:shadow-2xl transform hover:scale-105 transition-all duration-400 text-sm sm:text-base"
+            <Link
+              href="/login"
+              className="hidden sm:flex items-center gap-2 sm:gap-3 px-3 sm:px-4 py-2 rounded-full backdrop-blur-3xl border border-gray-200/50 transition-all duration-300 hover:shadow-2xl bg-white/50"
             >
-              <LogIn className="w-4 h-4 mr-1.5 sm:mr-2" />
-              Logout
-            </Button>
+              <div className="w-8 h-8 sm:w-10 sm:h-10 bg-gradient-to-br from-blue-600 to-cyan-300 rounded-full flex items-center justify-center text-white font-bold text-xs sm:text-sm shadow-md">
+                <User className="w-4 h-4" />
+              </div>
+              <span className="text-sm font-semibold">Logout</span>
+            </Link>
+
           )}
 
-          {/* Mobile Menu Toggle - Rotate Icon */}
+          {/* Mobile Menu Toggle */}
           <button
-            className="lg:hidden p-2 rounded-full backdrop-blur-2xl hover:bg-white/10 dark:hover:bg-gray-800/50 transition-all duration-300"
+            className="lg:hidden p-2 rounded-full backdrop-blur-2xl hover:bg-gray-200/50 transition-all duration-300"
             onClick={() => setMenuOpen(!menuOpen)}
           >
             <motion.div
@@ -273,7 +235,7 @@ export default function Navbar() {
         </div>
       </nav>
 
-      {/* Mobile Slide-In Menu - Ultra Smooth */}
+      {/* Mobile Menu */}
       <AnimatePresence>
         {menuOpen && (
           <>
@@ -290,9 +252,7 @@ export default function Navbar() {
               animate={{ x: 0 }}
               exit={{ x: "100%" }}
               transition={{ type: "spring", damping: 25, stiffness: 350 }}
-              className={`fixed right-0 top-0 h-full w-80 sm:w-96 shadow-4xl z-50 p-6 sm:p-8 overflow-y-auto ${
-                darkMode ? "bg-gray-950" : "bg-white"
-              }`}
+              className="fixed right-0 top-0 h-full w-80 sm:w-96 shadow-4xl z-50 p-6 sm:p-8 overflow-y-auto bg-white border-l border-gray-200/50"
             >
               <div className="flex justify-between items-center mb-10 sm:mb-12">
                 <Link href="/" className="text-2xl sm:text-3xl font-extrabold">
@@ -300,7 +260,7 @@ export default function Navbar() {
                 </Link>
                 <button
                   onClick={() => setMenuOpen(false)}
-                  className="p-2.5 rounded-full hover:bg-gray-200/50 dark:hover:bg-gray-800/50 transition"
+                  className="p-2.5 rounded-full hover:bg-gray-200/50 transition"
                 >
                   <X className="w-6 h-6" />
                 </button>
@@ -311,9 +271,7 @@ export default function Navbar() {
                   <Link
                     key={i}
                     href={item.href}
-                    className={`block px-5 sm:px-6 py-3 sm:py-4 rounded-3xl text-lg sm:text-xl font-bold transition-all duration-400 ${
-                      darkMode ? "hover:bg-gray-800/70" : "hover:bg-gray-100/70"
-                    } hover:shadow-md`}
+                    className="block px-5 sm:px-6 py-3 sm:py-4 rounded-3xl text-lg sm:text-xl font-bold transition-all duration-400 hover:bg-gray-100 hover:shadow-md"
                     onClick={() => setMenuOpen(false)}
                   >
                     {item.name}
@@ -321,47 +279,33 @@ export default function Navbar() {
                 ))}
               </nav>
 
-              <div className="space-y-3 sm:space-y-4">
+              {user ? (
                 <Button
-                  variant="outline"
-                  className="w-full justify-start text-base sm:text-lg py-6 sm:py-7 rounded-3xl font-semibold border-2"
-                  onClick={() => {
-                    setDarkMode(!darkMode);
-                    setMenuOpen(false);
-                  }}
+                  onClick={handleLogout}
+                  disabled={loading}
+                  className="w-full justify-center text-base sm:text-lg py-6 sm:py-7 rounded-3xl bg-red-600 hover:bg-red-700 text-white font-bold shadow-lg hover:shadow-2xl transform hover:scale-105 transition-all duration-400 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
                 >
-                  {darkMode ? <Sun className="w-5 h-5 mr-3" /> : <Moon className="w-5 h-5 mr-3" />}
-                  {darkMode ? "Light Mode" : "Dark Mode"}
+                  <LogOut className={`w-5 h-5 mr-3 ${loading ? 'animate-spin' : ''}`} />
+                  {loading ? "Mengarahkan..." : "Logout"}
                 </Button>
-
-                {user ? (
-                  <Button
-                    onClick={handleLogout}
-                    disabled={loading}
-                    className="w-full justify-center text-base sm:text-lg py-6 sm:py-7 rounded-3xl bg-gradient-to-r from-red-600 to-rose-600 text-white font-bold shadow-lg hover:shadow-2xl transform hover:scale-105 transition-all duration-400"
-                  >
-                    <LogOut className="w-5 h-5 mr-3" />
-                    {loading ? "Keluar..." : "Logout"}
-                  </Button>
-                ) : (
-                  <Button
-                    onClick={() => {
-                      setMenuOpen(false);
-                      router.push("/login");
-                    }}
-                    className="w-full justify-center text-base sm:text-lg py-6 sm:py-7 rounded-3xl bg-gradient-to-r from-blue-600 to-cyan-500 text-white font-bold shadow-lg hover:shadow-2xl transform hover:scale-105 transition-all duration-400"
-                  >
-                    <LogIn className="w-5 h-5 mr-3" />
-                    Logout
-                  </Button>
-                )}
-              </div>
+              ) : (
+                <Button
+                  onClick={() => {
+                    setMenuOpen(false);
+                    router.push("/login");
+                  }}
+                  className="w-full justify-center text-base sm:text-lg py-6 sm:py-7 rounded-3xl bg-gradient-to-r from-blue-600 to-cyan-500 hover:from-blue-700 hover:to-cyan-600 text-white font-bold shadow-lg hover:shadow-2xl transform hover:scale-105 transition-all duration-400"
+                >
+                  <User className="w-5 h-5 mr-3" />
+                  Logout
+                </Button>
+              )}
             </motion.div>
           </>
         )}
       </AnimatePresence>
 
-      {/* Success Alert - Ultra Floating */}
+      {/* Success Alert */}
       <AnimatePresence>
         {message.type === "success" && (
           <motion.div
@@ -369,9 +313,9 @@ export default function Navbar() {
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: -70, scale: 0.85 }}
             transition={{ type: "spring", stiffness: 600, damping: 35 }}
-            className="fixed top-20 sm:top-24 right-4 sm:right-6 z-50"
+            className="fixed top-20 sm:top-24 right-4 sm:right-6 z-50 max-w-sm"
           >
-            <Alert className="bg-gradient-to-br from-green-50 to-emerald-50 border-green-200/50 text-green-800 shadow-3xl backdrop-blur-2xl rounded-2xl">
+            <Alert className="bg-gradient-to-br from-green-50 to-emerald-50 border-green-200/50 text-green-800 shadow-3xl backdrop-blur-2xl rounded-2xl border w-full">
               <Activity className="w-5 h-5 text-green-600 animate-pulse" />
               <AlertTitle className="font-extrabold text-base">Sukses!</AlertTitle>
               <AlertDescription className="font-medium text-sm">{message.text}</AlertDescription>

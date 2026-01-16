@@ -40,6 +40,8 @@ export default function LoginForm({ className, ...props }: React.ComponentProps<
       setTimeout(() => {
         router.push("/")
       }, 1500)
+      console.log(userExists);
+      
     } else {
       setMessage({ type: "error", text: "Email atau password salah!" })
     }
@@ -89,6 +91,7 @@ export default function LoginForm({ className, ...props }: React.ComponentProps<
           </div>
           <Input
             type="password"
+            placeholder="••••••••"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             required
