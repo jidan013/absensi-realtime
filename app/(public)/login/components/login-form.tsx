@@ -1,118 +1,161 @@
 "use client"
 
-import React, { useState } from "react"
+import React from "react"
+import { useForm, FormProvider } from "react-hook-form"
+import { zodResolver } from "@hookform/resolvers/zod"
+import { z } from "zod"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import Link from "next/link"
 import {
-  Field,
   FieldDescription,
   FieldGroup,
-  FieldLabel,
-  FieldSeparator,
 } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 import { useRouter } from "next/navigation"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { signIn } from "next-auth/react"
+import { useState, useTransition } from "react"
+import {
+  FormControl,
+  FormField,    // ✅ TAMBAH INI
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from "@/components/ui/form"
 
-const users = [
-  { email: "user@gmail.com", password: "1234" },
-  { email: "admin@gmail.com", password: "1234" }
-]
+const loginSchema = z.object({
+  email: z.string().email("Email tidak valid"),
+  password: z.string().min(1, "Password diperlukan"),
+})
 
-export default function LoginForm({ className, ...props }: React.ComponentProps<"form">) {
+type LoginFormData = z.infer<typeof loginSchema>
+
+export default function LoginForm({ className }: React.ComponentProps<"form">) {
   const router = useRouter()
-  const [email, setEmail] = useState("")
-  const [password, setPassword] = useState("")
-  const [message, setMessage] = useState<{
-    type: "success" | "error" | "";
-    text: string;
-  }>({ type: "", text: "" })
+  const [error, setError] = useState("")
+  const [isPending, startTransition] = useTransition()
+  
+  const form = useForm<LoginFormData>({
+    resolver: zodResolver(loginSchema),
+    defaultValues: {
+      email: "",
+      password: "",
+    },
+  })
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault()
-    const userExists = users.find(
-      (u) => u.email === email && u.password === password
-    )
+  const onSubmit = (data: LoginFormData) => {
+    startTransition(async () => {
+      setError("")
+      try {
+        const result = await signIn("credentials", {
+          email: data.email,
+          password: data.password,
+          redirect: false,
+        })
 
-    if (userExists) {
-      setMessage({ type: "success", text: "Login berhasil! Mengarahkan..." })
-      setTimeout(() => {
-        router.push("/")
-      }, 1500)
-      console.log(userExists);
-      
-    } else {
-      setMessage({ type: "error", text: "Email atau password salah!" })
-    }
+        if (result?.error) {
+          setError("Email atau password salah!")
+          return
+        }
+
+        router.push(result?.url || "/")
+        router.refresh()
+      } catch (err) {
+        setError("Terjadi kesalahan. Silakan coba lagi.")
+      }
+    })
   }
 
   return (
-    <form
-      onSubmit={handleSubmit}
-      className={cn("flex flex-col gap-6", className)}
-      {...props}
-    >
-      <FieldGroup>
-        <div className="flex flex-col items-center gap-1 text-center">
-          <h1 className="text-2xl font-bold">Login to your account</h1>
-          <p className="text-muted-foreground text-sm">
-            Enter your email below to login to your account
-          </p>
-        </div>
+    <Card className={cn("w-[400px]", className)}>
+      <CardHeader className="text-center">
+        <CardTitle className="text-2xl">Masuk ke Akun Anda</CardTitle>
+        <CardDescription>
+          Masukkan email Anda untuk masuk ke akun
+        </CardDescription>
+      </CardHeader>
+      
+      <CardContent className="space-y-4">
+        {/* ✅ 1. WRAP FORM DENGAN FormProvider */}
+        <FormProvider {...form}>
+          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+            <FieldGroup>
+              {error && (
+                <Alert variant="destructive">
+                  <AlertTitle>Gagal</AlertTitle>
+                  <AlertDescription>{error}</AlertDescription>
+                </Alert>
+              )}
 
-        {/* ✅ Alert tampil jika ada pesan */}
-        {message.type && (
-          <Alert variant={message.type === "success" ? "default" : "destructive"}>
-            <AlertTitle>
-              {message.type === "success" ? "Berhasil" : "Gagal"}
-            </AlertTitle>
-            <AlertDescription>{message.text}</AlertDescription>
-          </Alert>
-        )}
+              {/* ✅ 2. EMAIL: Gunakan FormField */}
+              <FormField
+                control={form.control}
+                name="email"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Email</FormLabel>
+                    <FormControl>
+                      <Input
+                        type="email"
+                        placeholder="example@gmail.com"
+                        {...field}  // ✅ field, BUKAN form.register()
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
 
-        <Field>
-          <FieldLabel>Email</FieldLabel>
-          <Input
-            type="email"
-            placeholder="example@gmail.com"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            required
-          />
-        </Field>
+              {/* ✅ 3. PASSWORD: Gunakan FormField */}
+              <FormField
+                control={form.control}
+                name="password"
+                render={({ field }) => (
+                  <FormItem>
+                    <div className="flex items-center justify-between">
+                      <FormLabel>Password</FormLabel>
+                      <Link 
+                        href="/forgot-password" 
+                        className="text-sm underline-offset-4 hover:underline"
+                      >
+                        Lupa Password?
+                      </Link>
+                    </div>
+                    <FormControl>
+                      <Input
+                        type="password"
+                        placeholder="••••••••"
+                        {...field}  // ✅ field, BUKAN form.register()
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
 
-        <Field>
-          <div className="flex items-center">
-            <FieldLabel>Password</FieldLabel>
-            <a href="#" className="ml-auto text-sm underline-offset-4 hover:underline">
-              Forgot your password?
-            </a>
-          </div>
-          <Input
-            type="password"
-            placeholder="••••••••"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            required
-          />
-        </Field>
+              <Button 
+                type="submit" 
+                className="w-full"
+                disabled={isPending || form.formState.isSubmitting}
+              >
+                {isPending ? "Memproses..." : "Masuk"}
+              </Button>
 
-        <Field>
-          <Button type="submit">Login</Button>
-        </Field>
-
-        <FieldSeparator />
-
-        <Field>
-          <FieldDescription className="text-center">
-            Don&apos;t have an account?{" "}
-            <Link href="/register" className="underline underline-offset-4">
-              Sign up
-            </Link>
-          </FieldDescription>
-        </Field>
-      </FieldGroup>
-    </form>
+              <FieldDescription className="text-center text-sm">
+                Belum punya akun?{" "}
+                <Link 
+                  href="/register" 
+                  className="underline underline-offset-4 font-medium"
+                >
+                  Daftar sekarang
+                </Link>
+              </FieldDescription>
+            </FieldGroup>
+          </form>
+        </FormProvider> {/* ✅ 4. TUTUP FormProvider */}
+      </CardContent>
+    </Card>
   )
 }
