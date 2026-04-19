@@ -12,8 +12,6 @@ import {
   Sun,
   Moon,
   LogOut,
-  User,
-  Settings,
   ChevronDown,
   Activity,
   LogIn,
@@ -74,8 +72,9 @@ export default function Navbar() {
   const navItems = [
     { name: "Home", href: "/", roles: ["EMPLOYEE", "ADMIN"] },
     { name: "Absensi", href: "/absensi", roles: ["EMPLOYEE", "ADMIN"] },
-    { name: "Kontak", href: "/kontak", roles: ["EMPLOYEE", "ADMIN"] },
-    { name: "Pengguna", href: "/users", roles: ["ADMIN"] }, // hanya admin
+    { name: "Kontak", href: "/kontak", roles: ["EMPLOYEE"] },
+    { name: "Pengguna", href: "/users", roles: ["ADMIN"] },
+    { name: "Laporan", href: "/laporan", roles: ["ADMIN"] }, // hanya admin
   ].filter(
     (item) =>
       email ? item.roles.includes(role) : item.roles.includes("public"), // atau kosongkan jika hanya untuk login
@@ -158,7 +157,7 @@ export default function Navbar() {
             <span className="text-2xl sm:text-3xl font-extrabold tracking-tight">
               RAD
               <motion.span
-                className="text-transparent bg-clip-text bg-gradient-to-r from-blue-600 to-cyan-300"
+                className="text-transparent bg-clip-text bg-linear-to-r from-blue-600 to-cyan-300"
                 animate={{ backgroundPosition: ["0%", "100%"] }}
                 transition={{ duration: 2.5, repeat: Infinity, ease: "linear" }}
                 style={{ backgroundSize: "200% 100%" }}>

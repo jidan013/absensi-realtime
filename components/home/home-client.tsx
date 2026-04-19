@@ -148,12 +148,12 @@ function HeroSection() {
             </p>
 
             <div className="flex flex-col sm:flex-row gap-4">
-              <Button className="bg-gradient-to-r from-cyan-400 to-blue-500 text-white font-bold px-8 py-6 rounded-xl hover:shadow-lg transform hover:scale-105 transition-all duration-300 text-base md:text-lg group">
-                <span className="flex items-center gap-3">
+              <Link href="/absensi" className="bg-gradient-to-r from-cyan-400 to-blue-500 text-white font-bold px-6 py-2 rounded-xl hover:shadow-lg transform hover:scale-105 transition-all duration-300 text-base md:text-lg group">
+                <span className="flex items-center gap-1">
                   Coba
                   <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition" />
                 </span>
-              </Button>
+              </Link>
               <Button
                 variant="outline"
                 className="border-2 border-white/30 text-black px-8 py-6 rounded-xl font-bold hover:bg-white/10 transform hover:scale-105 transition-all duration-300 text-base md:text-lg">

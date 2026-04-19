@@ -39,25 +39,36 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { 
-  ArrowUpDown, 
-  ChevronDown, 
-  MoreHorizontal, 
-  Download, 
-  Clock, 
-  CheckCircle2, 
-  Loader2, 
-  XCircle 
+import {
+  ArrowUpDown,
+  ChevronDown,
+  MoreHorizontal,
+  Download,
+  Clock,
+  CheckCircle2,
+  Loader2,
+  XCircle,
 } from "lucide-react";
 import { DarkModeContext } from "@/components/home/dark-mode";
 
+// ── Tipe data ──────────────────────────────────────────────────────────────────
 export type Payment = {
   id: string;
-  time: string;
+  /** Waktu absen tetap (dicatat saat karyawan hadir) */
+  checkinTime: string;
   status: "pending" | "processing" | "success" | "failed";
   email: string;
 };
 
+// ── Helper: format waktu saat ini ─────────────────────────────────────────────
+const nowString = () =>
+  new Date().toLocaleTimeString("id-ID", {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  });
+
+// ── Kolom tabel ────────────────────────────────────────────────────────────────
 export const columns: ColumnDef<Payment>[] = [
   {
     id: "select",
@@ -68,24 +79,24 @@ export const columns: ColumnDef<Payment>[] = [
           (table.getIsSomePageRowsSelected() && "indeterminate")
         }
         onCheckedChange={(value) => table.toggleAllPageRowsSelected(!!value)}
-        className="translate-y-[2px]"
+        className="translate-y-0.5"
       />
     ),
     cell: ({ row }) => (
       <Checkbox
         checked={row.getIsSelected()}
         onCheckedChange={(value) => row.toggleSelected(!!value)}
-        className="translate-y-[2px]"
+        className="translate-y-0.5"
       />
     ),
     enableSorting: false,
     enableHiding: false,
   },
   {
-    accessorKey: "time",
+    accessorKey: "checkinTime",
     header: "Waktu Absen",
     cell: ({ row }) => {
-      const time = row.getValue("time") as string;
+      const time = row.getValue("checkinTime") as string;
       return (
         <div className="flex items-center gap-2 font-mono text-sm">
           <Clock className="w-4 h-4 text-blue-500" />
@@ -100,17 +111,41 @@ export const columns: ColumnDef<Payment>[] = [
     cell: ({ row }) => {
       const status = row.getValue("status") as string;
       const statusConfig = {
-        success: { label: "Hadir", color: "text-green-600", icon: CheckCircle2, bg: "bg-green-500/10" },
-        processing: { label: "Sedang Proses", color: "text-yellow-600", icon: Loader2, bg: "bg-yellow-500/10" },
-        failed: { label: "Gagal", color: "text-red-600", icon: XCircle, bg: "bg-red-500/10" },
-        pending: { label: "Menunggu", color: "text-gray-600", icon: Clock, bg: "bg-gray-500/10" },
+        success: {
+          label: "Hadir",
+          color: "text-green-600",
+          icon: CheckCircle2,
+          bg: "bg-green-500/10",
+        },
+        processing: {
+          label: "Sedang Proses",
+          color: "text-yellow-600",
+          icon: Loader2,
+          bg: "bg-yellow-500/10",
+        },
+        failed: {
+          label: "Gagal",
+          color: "text-red-600",
+          icon: XCircle,
+          bg: "bg-red-500/10",
+        },
+        pending: {
+          label: "Menunggu",
+          color: "text-gray-600",
+          icon: Clock,
+          bg: "bg-gray-500/10",
+        },
       };
 
-      const config = statusConfig[status as keyof typeof statusConfig] || statusConfig.pending;
+      const config =
+        statusConfig[status as keyof typeof statusConfig] ??
+        statusConfig.pending;
       const Icon = config.icon;
 
       return (
-        <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full ${config.bg} ${config.color} font-medium text-xs`}>
+        <div
+          className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-full ${config.bg} ${config.color} font-medium text-xs`}
+        >
           <motion.div
             animate={status === "processing" ? { rotate: 360 } : {}}
             transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
@@ -169,48 +204,34 @@ export const columns: ColumnDef<Payment>[] = [
   },
 ];
 
+// ── Komponen utama ─────────────────────────────────────────────────────────────
 export function DataTableDemo() {
   const darkModeContext = React.useContext(DarkModeContext);
-  if (!darkModeContext) throw new Error("DataTableDemo harus di dalam DarkModeProvider");
+  if (!darkModeContext)
+    throw new Error("DataTableDemo harus di dalam DarkModeProvider");
   const { darkMode } = darkModeContext;
 
-  const [data, setData] = React.useState<Payment[]>([
-    { id: "1", time: "", status: "success", email: "akmal@rad.co" },
-    { id: "2", time: "", status: "success", email: "abe@rad.co" },
-    { id: "3", time: "", status: "processing", email: "mat@rad.co" },
-    { id: "4", time: "", status: "success", email: "iwan@rad.co" },
-    { id: "5", time: "", status: "success", email: "agus@rad.co" },
-    { id: "6", time: "", status: "failed", email: "morelo@rad.co" },
-    { id: "7", time: "", status: "pending", email: "siti@rad.co" },
-    { id: "8", time: "", status: "success", email: "budi@rad.co" },
-  ]);
+  // Waktu absen tiap karyawan dicatat saat komponen pertama kali mount (tetap).
+  const [data] = React.useState<Payment[]>(() => {
+    const now = nowString();
+    return [
+      { id: "1", checkinTime: now, status: "success",    email: "akmal@rad.co"  },
+      { id: "2", checkinTime: now, status: "success",    email: "abe@rad.co"    },
+      { id: "3", checkinTime: now, status: "processing", email: "mat@rad.co"    },
+      { id: "4", checkinTime: now, status: "success",    email: "iwan@rad.co"   },
+      { id: "5", checkinTime: now, status: "success",    email: "agus@rad.co"   },
+      { id: "6", checkinTime: now, status: "failed",     email: "morelo@rad.co" },
+      { id: "7", checkinTime: now, status: "pending",    email: "siti@rad.co"   },
+      { id: "8", checkinTime: now, status: "success",    email: "budi@rad.co"   },
+    ];
+  });
 
   const [globalFilter, setGlobalFilter] = React.useState("");
   const [debouncedFilter, setDebouncedFilter] = React.useState("");
 
-  // Realtime Clock Update
+  // Debounce search
   React.useEffect(() => {
-    const interval = setInterval(() => {
-      const now = new Date().toLocaleTimeString("id-ID", {
-        hour: "2-digit",
-        minute: "2-digit",
-        second: "2-digit",
-      });
-      setData((prev) =>
-        prev.map((row) => ({
-          ...row,
-          time: now,
-        }))
-      );
-    }, 1000);
-    return () => clearInterval(interval);
-  }, []);
-
-  // Debounce Search
-  React.useEffect(() => {
-    const timeout = setTimeout(() => {
-      setDebouncedFilter(globalFilter);
-  }, 300);
+    const timeout = setTimeout(() => setDebouncedFilter(globalFilter), 300);
     return () => clearTimeout(timeout);
   }, [globalFilter]);
 
@@ -221,32 +242,33 @@ export function DataTableDemo() {
     getFilteredRowModel: getFilteredRowModel(),
     getSortedRowModel: getSortedRowModel(),
     getPaginationRowModel: getPaginationRowModel(),
-    state: {
-      globalFilter: debouncedFilter,
-    },
+    state: { globalFilter: debouncedFilter },
     onGlobalFilterChange: setDebouncedFilter,
   });
 
-  // Export to CSV
+  // Export ke CSV — kolom sesuai dengan tipe Payment
   const exportToCSV = () => {
     const headers = ["ID", "Waktu Absen", "Status", "Email"];
     const rows = data.map((row) => [
       row.id,
-      row.time,
+      row.checkinTime,
       row.status,
       row.email,
     ]);
-    const csv = [headers, ...rows].map((row) => row.join(",")).join("\n");
-    const blob = new Blob([csv], { type: "text/csv" });
-    const url = window.URL.createObjectURL(blob);
+    const csv = [headers, ...rows]
+      .map((row) => row.map((cell) => `"${cell}"`).join(","))
+      .join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `absensi-realtime-${new Date().toISOString().split("T")[0]}.csv`;
+    a.download = `absensi-${new Date().toISOString().split("T")[0]}.csv`;
     a.click();
+    URL.revokeObjectURL(url);
   };
 
   return (
-    <motion.div 
+    <motion.div
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       className="w-full max-w-6xl mx-auto p-6"
@@ -256,13 +278,23 @@ export function DataTableDemo() {
         <div className="relative flex-1 max-w-md">
           <Input
             placeholder="Cari email..."
-            value={globalFilter ?? ""}
+            value={globalFilter}
             onChange={(e) => setGlobalFilter(e.target.value)}
             className="pl-10 pr-4 py-2.5 rounded-xl backdrop-blur-xl"
           />
           <div className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500">
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+            <svg
+              className="w-5 h-5"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+              />
             </svg>
           </div>
         </div>
@@ -284,7 +316,11 @@ export function DataTableDemo() {
                     checked={col.getIsVisible()}
                     onCheckedChange={(value) => col.toggleVisibility(!!value)}
                   >
-                    {col.id === "time" ? "Waktu Absen" : col.id === "status" ? "Status" : "Email"}
+                    {col.id === "checkinTime"
+                      ? "Waktu Absen"
+                      : col.id === "status"
+                      ? "Status"
+                      : "Email"}
                   </DropdownMenuCheckboxItem>
                 ))}
             </DropdownMenuContent>
@@ -301,10 +337,14 @@ export function DataTableDemo() {
         </div>
       </div>
 
-      {/* Table Container - Glassmorphism */}
-      <div className={`rounded-2xl overflow-hidden border backdrop-blur-2xl shadow-2xl ${
-        darkMode ? "bg-gray-900/70 border-gray-800" : "bg-white/70 border-gray-200"
-      }`}>
+      {/* Table */}
+      <div
+        className={`rounded-2xl overflow-hidden border backdrop-blur-2xl shadow-2xl ${
+          darkMode
+            ? "bg-gray-900/70 border-gray-800"
+            : "bg-white/70 border-gray-200"
+        }`}
+      >
         <Table>
           <TableHeader>
             {table.getHeaderGroups().map((headerGroup) => (
@@ -313,7 +353,10 @@ export function DataTableDemo() {
                   <TableHead key={header.id} className="font-bold text-left">
                     {header.isPlaceholder
                       ? null
-                      : flexRender(header.column.columnDef.header, header.getContext())}
+                      : flexRender(
+                          header.column.columnDef.header,
+                          header.getContext()
+                        )}
                   </TableHead>
                 ))}
               </TableRow>
@@ -330,21 +373,25 @@ export function DataTableDemo() {
                     exit={{ opacity: 0, x: 20 }}
                     transition={{ duration: 0.3 }}
                     className={`border-b transition-all duration-300 ${
-                      darkMode 
-                        ? "hover:bg-gray-800/50" 
-                        : "hover:bg-gray-50"
+                      darkMode ? "hover:bg-gray-800/50" : "hover:bg-gray-50"
                     } hover:shadow-lg hover:-translate-y-0.5`}
                   >
                     {row.getVisibleCells().map((cell) => (
                       <TableCell key={cell.id} className="py-4">
-                        {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                        {flexRender(
+                          cell.column.columnDef.cell,
+                          cell.getContext()
+                        )}
                       </TableCell>
                     ))}
                   </motion.tr>
                 ))
               ) : (
                 <TableRow>
-                  <TableCell colSpan={columns.length} className="h-32 text-center text-gray-500">
+                  <TableCell
+                    colSpan={columns.length}
+                    className="h-32 text-center text-gray-500"
+                  >
                     Tidak ada data ditemukan.
                   </TableCell>
                 </TableRow>
@@ -398,7 +445,8 @@ export function DataTableDemo() {
         </div>
 
         <span className="text-sm text-gray-600">
-          Halaman {table.getState().pagination.pageIndex + 1} dari {table.getPageCount()}
+          Halaman {table.getState().pagination.pageIndex + 1} dari{" "}
+          {table.getPageCount()}
         </span>
       </div>
     </motion.div>

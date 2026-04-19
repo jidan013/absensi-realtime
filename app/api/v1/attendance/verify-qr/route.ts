@@ -1,200 +1,207 @@
-// import { NextRequest, NextResponse } from "next/server";
-// import db from "@/lib/db";
-
-// export async function GET(req: NextRequest) {
-//   try {
-//     // Ambil code dari query param (?code=...)
-//     const code = req.nextUrl.searchParams.get("code");
-
-//     if (!code) {
-//       return NextResponse.json(
-//         { success: false, message: "Code QR tidak ditemukan" },
-//         { status: 400 },
-//       );
-//     }
-
-//     // Cari QR Code di database
-//     const qrCode = await db.qRCode.findUnique({
-//       where: { code },
-//       include: {
-//         user: {
-//           select: { name: true, position: true },
-//         },
-//         attendances: {
-//           select: {
-//             id: true,
-//             clockIn: true,
-//             photoUrl: true,
-//             location: {
-//               select: { latitude: true, longitude: true, address: true },
-//             },
-//           },
-//           take: 1,
-//         },
-//       },
-//     });
-
-//     if (!qrCode) {
-//       return NextResponse.json(
-//         { success: false, message: "QR Code tidak ditemukan" },
-//         { status: 404 },
-//       );
-//     }
-
-//     const now = new Date();
-
-//     // Validasi expired dan used
-//     if (qrCode.expiredAt < now) {
-//       return NextResponse.json(
-//         { success: false, message: "QR Code sudah kadaluarsa" },
-//         { status: 400 },
-//       );
-//     }
-
-//     if (qrCode.isUsed) {
-//       return NextResponse.json(
-//         { success: false, message: "QR Code sudah pernah digunakan" },
-//         { status: 400 },
-//       );
-//     }
-
-//     // Tandai sebagai used (sekali pakai)
-//     await db.qRCode.update({
-//       where: { id: qrCode.id },
-//       data: { isUsed: true },
-//     });
-
-//     // Return hasil verifikasi
-//     return NextResponse.json({
-//       success: true,
-//       message: "Absensi berhasil diverifikasi!",
-//       data: {
-//         user: {
-//           name: qrCode.user.name,
-//           position: qrCode.user.position || "Tidak ada posisi",
-//         },
-//         attendance: qrCode.attendances[0]
-//           ? {
-//               id: qrCode.attendances[0].id,
-//               clockIn: qrCode.attendances[0].clockIn?.toISOString(),
-//               photoUrl: qrCode.attendances[0].photoUrl,
-//               location: qrCode.attendances[0].location,
-//             }
-//           : null,
-//         qrCode: {
-//           code: qrCode.code,
-//           verifiedAt: now.toISOString(),
-//         },
-//       },
-//     });
-//   } catch (error) {
-//     console.error("Error verify QR:", error);
-//     return NextResponse.json(
-//       { success: false, message: "Gagal verifikasi QR" },
-//       { status: 500 },
-//     );
-//   }
-// }
-
 import { NextRequest, NextResponse } from "next/server";
+import { requireAuth } from "@/lib/auth";
 import db from "@/lib/db";
 
+// Tipe QR dibaca dari prefix code:
+// ABSEN-IN-...  = clock in
+// ABSEN-OUT-... = clock out
+
 export async function GET(req: NextRequest) {
-  const origin = req.nextUrl.origin; // atau gunakan process.env.NEXT_PUBLIC_BASE_URL kalau ada
-
   try {
-    const code = req.nextUrl.searchParams.get("code");
+    const userAccess = await requireAuth();
 
-    // Case 1: Tidak ada code → redirect dengan error
+    const { searchParams } = new URL(req.url);
+    const code = searchParams.get("code");
+
     if (!code) {
-      const url = new URL("/absensi/qr/verify", origin);
-      url.searchParams.set("success", "false");
-      url.searchParams.set("message", "Code QR tidak ditemukan");
-      return NextResponse.redirect(url, 303); // 303 See Other lebih cocok untuk redirect setelah GET
+      return NextResponse.json(
+        { success: false, message: "QR Code tidak ditemukan dalam URL." },
+        { status: 400 }
+      );
     }
 
-    // Cari QR Code
-    const qrCode = await db.qRCode.findUnique({
+    // 1. Cari QR
+    const qr = await db.qRCode.findUnique({
       where: { code },
       include: {
-        user: {
-          select: { name: true, position: true },
+        user: { select: { name: true, email: true, position: true } },
+      },
+    });
+
+    if (!qr) {
+      return NextResponse.json(
+        { success: false, message: "QR Code tidak valid atau tidak ditemukan." },
+        { status: 404 }
+      );
+    }
+
+    // 2. QR harus milik user yang scan
+    if (qr.userId !== userAccess.userId) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: "QR Code bukan milik Anda. Gunakan QR milik Anda sendiri.",
         },
-        attendances: {
-          select: {
-            id: true,
-            clockIn: true,
-            photoUrl: true,
-            location: {
-              select: { latitude: true, longitude: true, address: true },
-            },
-          },
-          take: 1,
+        { status: 403 }
+      );
+    }
+
+    // 3. Cek expired
+    if (new Date() > qr.expiredAt) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: "QR Code sudah kadaluarsa (lebih dari 60 detik). Minta QR baru.",
+        },
+        { status: 400 }
+      );
+    }
+
+    // 4. Cek sudah dipakai
+    if (qr.isUsed) {
+      return NextResponse.json(
+        { success: false, message: "QR Code sudah pernah digunakan." },
+        { status: 400 }
+      );
+    }
+
+    // 5. Baca tipe dari prefix code
+    const qrType: "CLOCK_IN" | "CLOCK_OUT" = qr.code.startsWith("ABSEN-OUT-")
+      ? "CLOCK_OUT"
+      : "CLOCK_IN";
+
+    // 6. Ambil data absensi hari ini
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+    const todayEnd = new Date();
+    todayEnd.setHours(23, 59, 59, 999);
+
+    const todayAttendance = await db.attendance.findFirst({
+      where: {
+        userId: userAccess.userId,
+        clockIn: { gte: todayStart, lte: todayEnd },
+      },
+      include: {
+        location: {
+          select: { latitude: true, longitude: true, address: true },
         },
       },
     });
 
-    // Case 2: QR tidak ditemukan
-    if (!qrCode) {
-      const url = new URL("/absensi/qr/verify", origin);
-      url.searchParams.set("success", "false");
-      url.searchParams.set("message", "QR Code tidak ditemukan");
-      return NextResponse.redirect(url, 303);
-    }
-
     const now = new Date();
 
-    // Case 3: Expired
-    if (qrCode.expiredAt < now) {
-      const url = new URL("/absensi/qr/verify", origin);
-      url.searchParams.set("success", "false");
-      url.searchParams.set("message", "QR Code sudah kadaluarsa");
-      return NextResponse.redirect(url, 303);
+    // ── CLOCK IN ──────────────────────────────────────────────────
+    if (qrType === "CLOCK_IN") {
+      if (todayAttendance) {
+        return NextResponse.json(
+          { success: false, message: "Anda sudah absen masuk hari ini." },
+          { status: 400 }
+        );
+      }
+
+      const attendance = await db.attendance.create({
+        data: {
+          userId: userAccess.userId,
+          qrId: qr.id,
+          clockIn: now,
+          locationId: null,
+        },
+        include: {
+          location: {
+            select: { latitude: true, longitude: true, address: true },
+          },
+        },
+      });
+
+      await db.qRCode.update({
+        where: { id: qr.id },
+        data: { isUsed: true },
+      });
+
+      return NextResponse.json({
+        success: true,
+        type: "CLOCK_IN",
+        message: "Absen masuk berhasil dicatat.",
+        data: {
+          user: {
+            name: qr.user.name,
+            email: qr.user.email,
+            position: qr.user.position,
+          },
+          attendance: {
+            id: attendance.id,
+            clockIn: now.toISOString(),
+            clockOut: null,
+            location: attendance.location ?? null,
+          },
+        },
+      });
     }
 
-    // Case 4: Sudah digunakan
-    if (qrCode.isUsed) {
-      const url = new URL("/absensi/qr/verify", origin);
-      url.searchParams.set("success", "false");
-      url.searchParams.set("message", "QR Code sudah pernah digunakan");
-      return NextResponse.redirect(url, 303);
+    // ── CLOCK OUT ─────────────────────────────────────────────────
+    if (!todayAttendance) {
+      return NextResponse.json(
+        { success: false, message: "Anda belum absen masuk hari ini." },
+        { status: 400 }
+      );
     }
 
-    // Sukses: tandai used
+    if (todayAttendance.clockOut) {
+      return NextResponse.json(
+        { success: false, message: "Anda sudah absen pulang hari ini." },
+        { status: 400 }
+      );
+    }
+
+    const updated = await db.attendance.update({
+      where: { id: todayAttendance.id },
+      data: { clockOut: now },
+      include: {
+        location: {
+          select: { latitude: true, longitude: true, address: true },
+        },
+      },
+    });
+
     await db.qRCode.update({
-      where: { id: qrCode.id },
+      where: { id: qr.id },
       data: { isUsed: true },
     });
 
-    // Case sukses → redirect dengan data minimal lewat query params
-    // (atau simpan di session/cookie kalau data terlalu besar)
-    const url = new URL("/absensi/qr/verify", origin);
-    url.searchParams.set("success", "true");
-    url.searchParams.set("message", "Absensi berhasil diverifikasi!");
-    url.searchParams.set("name", qrCode.user.name);
-    url.searchParams.set(
-      "position",
-      qrCode.user.position || "Tidak ada posisi",
-    );
+    // Hitung durasi kerja
+    const clockInTime = todayAttendance.clockIn ?? now;
+    const durasiMs = now.getTime() - clockInTime.getTime();
+    const durasiJam = Math.floor(durasiMs / (1000 * 60 * 60));
+    const durasiMenit = Math.floor((durasiMs % (1000 * 60 * 60)) / (1000 * 60));
 
-    if (qrCode.attendances[0]) {
-      url.searchParams.set(
-        "clockIn",
-        qrCode.attendances[0].clockIn?.toISOString() || "",
-      );
-      url.searchParams.set("photoUrl", qrCode.attendances[0].photoUrl || "");
-      if (qrCode.attendances[0].location?.address) {
-        url.searchParams.set("address", qrCode.attendances[0].location.address);
-      }
-    }
-
-    return NextResponse.redirect(url, 303);
+    return NextResponse.json({
+      success: true,
+      type: "CLOCK_OUT",
+      message: "Absen pulang berhasil dicatat.",
+      durasi: `${durasiJam} jam ${durasiMenit} menit`,
+      data: {
+        user: {
+          name: qr.user.name,
+          email: qr.user.email,
+          position: qr.user.position,
+        },
+        attendance: {
+          id: updated.id,
+          clockIn: todayAttendance.clockIn?.toISOString() ?? null,
+          clockOut: now.toISOString(),
+          location: updated.location ?? null,
+        },
+      },
+    });
   } catch (error) {
-    console.error("Error verify QR:", error);
-
-    const url = new URL("/absensi/qr/verify", origin);
-    url.searchParams.set("success", "false");
-    url.searchParams.set("message", "Gagal verifikasi QR");
-    return NextResponse.redirect(url, 303);
+    console.error("Error /api/v1/attendance/verify-qr:", error);
+    return NextResponse.json(
+      {
+        success: false,
+        message: "Terjadi kesalahan server. Coba lagi.",
+        details: (error as Error).message,
+      },
+      { status: 500 }
+    );
   }
 }
