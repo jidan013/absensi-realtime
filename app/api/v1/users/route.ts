@@ -1,9 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
 import db from "@/lib/db";
-import { User } from "@prisma/client";
 
-// Type response user (tanpa password)
-type SafeUser = Omit<User, "password">;
+type Role = "ADMIN" | "EMPLOYEE";
+
+type SafeUser = {
+  id: string;
+  name: string;
+  email: string;
+  role: Role;
+  position: string;
+  createdAt: Date;
+  updatedAt: Date;
+};
 
 export async function GET(req: NextRequest) {
   try {
