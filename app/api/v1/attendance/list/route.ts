@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/auth";
 import db from "@/lib/db";
+import { Prisma } from "@prisma/client"; 
 
 export async function GET(req: NextRequest) {
   try {
@@ -26,10 +27,16 @@ export async function GET(req: NextRequest) {
       dateFilter.lte = e;
     }
 
+    // 1. Menggunakan tipe data bawaan Prisma (Full Type-Safe)
+    const whereClause: Prisma.AttendanceWhereInput = {};
+    
+    if (startDate || endDate) {
+      whereClause.clockIn = dateFilter;
+    }
+
+    // 2. Karena whereClause sudah strongly-typed, TypeScript tidak akan kebingungan
     const attendances = await db.attendance.findMany({
-      where: {
-        ...(Object.keys(dateFilter).length > 0 ? { clockIn: dateFilter } : {}),
-      },
+      where: whereClause,
       include: {
         user: { select: { name: true, email: true, position: true } },
         location: { select: { latitude: true, longitude: true, address: true } },
@@ -38,7 +45,8 @@ export async function GET(req: NextRequest) {
       orderBy: { clockIn: "desc" },
     });
 
-    // Flatten response agar sesuai interface AttendanceRecord di frontend
+    // 3. Tipe data 'att' sekarang secara otomatis terdeteksi dengan tepat 
+    // berdasarkan skema database Anda, tanpa perlu menggunakan ": any"
     const result = attendances.map((att) => ({
       id: att.id,
       name: att.user?.name ?? "-",
