@@ -52,19 +52,20 @@ export async function POST(req: NextRequest) {
     // ── Expired-kan QR lama yang belum dipakai ────────────────────
     const prefix = qrType === "CLOCK_IN" ? "ABSEN-IN-" : "ABSEN-OUT-";
 
-    const oldQRs = await db.qRCode.findMany({
+    const oldQRs: { id: string }[] = await db.qRCode.findMany({
       where: {
         userId: userAccess.userId,
         isUsed: false,
         date: { gte: todayStart, lte: todayEnd },
         code: { startsWith: prefix },
       },
+      select: { id: true },
     });
 
     if (oldQRs.length > 0) {
       await db.qRCode.updateMany({
         where: {
-          id: { in: oldQRs.map((q) => q.id) },
+          id: { in: oldQRs.map((q: { id: string }) => q.id) },
         },
         data: { expiredAt: new Date() },
       });
