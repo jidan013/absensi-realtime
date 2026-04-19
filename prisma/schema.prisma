@@ -1,11 +1,9 @@
 // This is your Prisma schema file,
 // learn more about it in the docs: https://pris.ly/d/prisma-schema
 
-// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
-// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
-
 generator client {
-  provider = "prisma-client-js"
+  provider        = "prisma-client-js"
+  previewFeatures = ["driverAdapters"]
 }
 
 datasource db {
@@ -26,9 +24,6 @@ model User {
   role     Role   @default(EMPLOYEE)
   position String
 
-  // department   Department? @relation(fields: [departmentId], references: [id])
-  // departmentId String?
-
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -38,23 +33,12 @@ model User {
   @@map("users")
 }
 
-/// Departemen
-// model Department {
-//   id        String   @id @default(uuid())
-//   name      String   @unique
-//   createdAt DateTime @default(now())
-
-//   users User[]
-
-//   @@map("departments")
-// }
-
 /// QR Code untuk sesi absensi
 model QRCode {
   id String @id @default(nanoid())
 
   code String   @unique
-  date DateTime // tanggal QR berlaku
+  date DateTime
 
   createdAt DateTime @default(now())
   expiredAt DateTime
@@ -79,9 +63,8 @@ model Attendance {
   clockIn  DateTime?
   clockOut DateTime?
 
-  // Bukti absensi
-  photoUrl   String? // URL foto bukti absensi
-  locationId String? // lokasi absensi
+  photoUrl   String?
+  locationId String?
 
   createdAt DateTime @default(now())
 
@@ -93,7 +76,6 @@ model Attendance {
 }
 
 /// Tabel lokasi absensi
-/// Menyimpan titik GPS saat karyawan absen
 model Location {
   id        String   @id @default(nanoid())
   latitude  Float

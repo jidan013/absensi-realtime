@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -72,8 +72,35 @@ const formatTime = (iso: string): string =>
 const mapsURL = (lat: number, lon: number): string =>
   `https://www.google.com/maps?q=${lat},${lon}`;
 
-// ═══════════════════════════════════════════════════════════════════
-export default function VerifyQRPage() {
+// ── Loading fallback ──────────────────────────────────────────────
+function LoadingScreen() {
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-indigo-50 via-white to-cyan-50 flex items-center justify-center p-4">
+      <motion.div
+        initial={{ opacity: 0, scale: 0.9 }}
+        animate={{ opacity: 1, scale: 1 }}
+        className="text-center space-y-6"
+      >
+        <div className="relative w-24 h-24 mx-auto">
+          <div className="absolute inset-0 rounded-full border-4 border-indigo-200 animate-ping" />
+          <div className="relative w-24 h-24 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center">
+            <QrCode className="w-12 h-12 text-white" />
+          </div>
+        </div>
+        <div>
+          <p className="text-2xl font-black text-gray-800">Memverifikasi QR Code...</p>
+          <p className="text-gray-500 mt-2 flex items-center justify-center gap-2">
+            <RefreshCw className="w-4 h-4 animate-spin" />
+            Mohon tunggu sebentar
+          </p>
+        </div>
+      </motion.div>
+    </div>
+  );
+}
+
+// ── Inner component (pakai useSearchParams) ───────────────────────
+function VerifyQRContent() {
   const searchParams = useSearchParams();
   const code = searchParams.get("code");
 
@@ -115,29 +142,7 @@ export default function VerifyQRPage() {
 
   // ── Loading ────────────────────────────────────────────────────
   if (status === "loading") {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-indigo-50 via-white to-cyan-50 flex items-center justify-center p-4">
-        <motion.div
-          initial={{ opacity: 0, scale: 0.9 }}
-          animate={{ opacity: 1, scale: 1 }}
-          className="text-center space-y-6"
-        >
-          <div className="relative w-24 h-24 mx-auto">
-            <div className="absolute inset-0 rounded-full border-4 border-indigo-200 animate-ping" />
-            <div className="relative w-24 h-24 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center">
-              <QrCode className="w-12 h-12 text-white" />
-            </div>
-          </div>
-          <div>
-            <p className="text-2xl font-black text-gray-800">Memverifikasi QR Code...</p>
-            <p className="text-gray-500 mt-2 flex items-center justify-center gap-2">
-              <RefreshCw className="w-4 h-4 animate-spin" />
-              Mohon tunggu sebentar
-            </p>
-          </div>
-        </motion.div>
-      </div>
-    );
+    return <LoadingScreen />;
   }
 
   // ── Error ──────────────────────────────────────────────────────
@@ -257,7 +262,6 @@ export default function VerifyQRPage() {
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: 0.3 }}
               >
-                {/* Badge masuk/pulang */}
                 <div className="inline-flex items-center gap-2 bg-white/20 px-4 py-1.5 rounded-full mt-4 mb-2">
                   {isClockIn
                     ? <LogIn className="w-4 h-4 text-white" />
@@ -315,7 +319,7 @@ export default function VerifyQRPage() {
                   </div>
                 )}
 
-                {/* Jam Pulang + Durasi (hanya untuk clock out) */}
+                {/* Jam Pulang + Durasi */}
                 {!isClockIn && attendance.clockOut && (
                   <>
                     <div className="flex items-start gap-4 p-4 bg-blue-50 rounded-2xl border border-blue-100">
@@ -440,5 +444,14 @@ export default function VerifyQRPage() {
         </motion.div>
       </div>
     </>
+  );
+}
+
+// ── Default export dengan Suspense wrapper ────────────────────────
+export default function VerifyQRPage() {
+  return (
+    <Suspense fallback={<LoadingScreen />}>
+      <VerifyQRContent />
+    </Suspense>
   );
 }

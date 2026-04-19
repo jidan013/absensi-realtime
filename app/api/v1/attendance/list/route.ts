@@ -38,7 +38,27 @@ export async function GET(req: NextRequest) {
       orderBy: { clockIn: "desc" },
     });
 
-    return NextResponse.json(attendances);
+    // Flatten response agar sesuai interface AttendanceRecord di frontend
+    const result = attendances.map((att) => ({
+      id: att.id,
+      name: att.user?.name ?? "-",
+      email: att.user?.email ?? null,
+      method: att.qrId ? "qr" : "selfie",
+      clockIn: att.clockIn?.toISOString() ?? null,
+      clockOut: att.clockOut?.toISOString() ?? null,
+      photoUrl: att.photoUrl ?? null,
+      location: att.location
+        ? {
+            latitude: att.location.latitude,
+            longitude: att.location.longitude,
+            address: att.location.address ?? null,
+          }
+        : null,
+      qrCode: att.qrCode?.code ?? null,
+      createdAt: att.createdAt.toISOString(),
+    }));
+
+    return NextResponse.json(result);
   } catch (error) {
     console.error("Error /api/v1/attendance/list:", error);
     return NextResponse.json(
