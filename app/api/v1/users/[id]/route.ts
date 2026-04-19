@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import db from "@/lib/db";
-import { Role, User } from "@prisma/client";
 import bcrypt from "bcryptjs";
+
+type Role = "ADMIN" | "EMPLOYEE";
 
 // Type untuk body PATCH (semua optional)
 interface UpdateUserInput {
@@ -11,7 +12,17 @@ interface UpdateUserInput {
   password?: string;
 }
 
-type SafeUser = Omit<User, "password">;
+type SafeUser = {
+  id: string;
+  name: string;
+  email: string;
+  role: Role;
+  position: string;
+  createdAt: Date;
+  updatedAt: Date;
+};
+
+const VALID_ROLES: Role[] = ["ADMIN", "EMPLOYEE"];
 
 export async function GET(
   req: NextRequest,
@@ -66,13 +77,16 @@ export async function PATCH(
       );
     }
 
-    const updateData: Partial<
-      Pick<User, "name" | "position" | "role" | "password">
-    > = {};
+    const updateData: {
+      name?: string;
+      position?: string;
+      role?: Role;
+      password?: string;
+    } = {};
 
     if (body.name) updateData.name = body.name;
     if (body.position) updateData.position = body.position;
-    if (body.role && Object.values(Role).includes(body.role)) {
+    if (body.role && VALID_ROLES.includes(body.role)) {
       updateData.role = body.role;
     }
     if (body.password) {
