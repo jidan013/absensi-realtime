@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
-import { Role } from "@prisma/client";
 import db from "@/lib/db";
 import { registerSchema } from "@/lib/validation/auth";
+
+type Role = "ADMIN" | "EMPLOYEE";
 
 export async function POST(req: NextRequest) {
   try {
