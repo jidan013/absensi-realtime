@@ -2,17 +2,25 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/auth";
 import db from "@/lib/db";
 import ExcelJS from "exceljs";
-import { Prisma } from "@prisma/client";
 
-// 1. Definisikan tipe data spesifik menggunakan Prisma.AttendanceGetPayload
-// Ini memastikan TypeScript mengenali relasi tabel (user, location, qrCode)
-type AttendanceWithRelations = Prisma.AttendanceGetPayload<{
-  include: {
-    user: { select: { name: true; email: true; position: true } };
-    location: { select: { latitude: true; longitude: true; address: true } };
-    qrCode: { select: { code: true } };
-  };
-}>;
+type AttendanceWithRelations = {
+  clockIn: Date | null;
+  clockOut: Date | null;
+  photoUrl: string | null;
+  user: {
+    name: string;
+    email: string;
+    position: string;
+  } | null;
+  location: {
+    latitude: number | null;
+    longitude: number | null;
+    address: string | null;
+  } | null;
+  qrCode: {
+    code: string;
+  } | null;
+};
 
 export async function GET(req: NextRequest) {
   try {
@@ -38,7 +46,7 @@ export async function GET(req: NextRequest) {
       dateFilter.lte = e;
     }
 
-    const attendances = await db.attendance.findMany({
+    const attendances: AttendanceWithRelations[] = await db.attendance.findMany({
       where: {
         ...(Object.keys(dateFilter).length > 0 ? { clockIn: dateFilter } : {}),
       },
@@ -128,7 +136,6 @@ export async function GET(req: NextRequest) {
     });
 
     // Data rows
-    // 2. Terapkan tipe AttendanceWithRelations pada parameter callback
     attendances.forEach((att: AttendanceWithRelations, i: number) => {
       const rowIndex = 5 + i;
       const row = sheet.getRow(rowIndex);
@@ -136,8 +143,7 @@ export async function GET(req: NextRequest) {
 
       const lat = att.location?.latitude ?? null;
       const lon = att.location?.longitude ?? null;
-      
-      // 3. Menggunakan URL standard Google Maps
+
       const mapsUrl =
         lat != null && lon != null
           ? `https://www.google.com/maps?q=${lat},${lon}`
