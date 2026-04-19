@@ -2,6 +2,17 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/auth";
 import db from "@/lib/db";
 import ExcelJS from "exceljs";
+import { Prisma } from "@prisma/client";
+
+// 1. Definisikan tipe data spesifik menggunakan Prisma.AttendanceGetPayload
+// Ini memastikan TypeScript mengenali relasi tabel (user, location, qrCode)
+type AttendanceWithRelations = Prisma.AttendanceGetPayload<{
+  include: {
+    user: { select: { name: true; email: true; position: true } };
+    location: { select: { latitude: true; longitude: true; address: true } };
+    qrCode: { select: { code: true } };
+  };
+}>;
 
 export async function GET(req: NextRequest) {
   try {
@@ -117,13 +128,16 @@ export async function GET(req: NextRequest) {
     });
 
     // Data rows
-    attendances.forEach((att, i) => {
+    // 2. Terapkan tipe AttendanceWithRelations pada parameter callback
+    attendances.forEach((att: AttendanceWithRelations, i: number) => {
       const rowIndex = 5 + i;
       const row = sheet.getRow(rowIndex);
       row.height = 20;
 
       const lat = att.location?.latitude ?? null;
       const lon = att.location?.longitude ?? null;
+      
+      // 3. Menggunakan URL standard Google Maps
       const mapsUrl =
         lat != null && lon != null
           ? `https://www.google.com/maps?q=${lat},${lon}`
@@ -137,9 +151,9 @@ export async function GET(req: NextRequest) {
 
       const values: CellValue[] = [
         i + 1,
-        att.user.name,
-        att.user.email,
-        att.user.position,
+        att.user?.name ?? "-",
+        att.user?.email ?? "-",
+        att.user?.position ?? "-",
         att.clockIn
           ? new Date(att.clockIn).toLocaleDateString("id-ID", {
               day: "2-digit",
@@ -159,7 +173,7 @@ export async function GET(req: NextRequest) {
         lat ?? "-",
         lon ?? "-",
         att.location?.address ??
-          (lat != null ? `${lat.toFixed(4)}, ${lon?.toFixed(4)}` : "-"),
+          (lat != null ? `${Number(lat).toFixed(4)}, ${Number(lon).toFixed(4)}` : "-"),
         mapsUrl
           ? { text: "Buka di Google Maps", hyperlink: mapsUrl }
           : "-",
