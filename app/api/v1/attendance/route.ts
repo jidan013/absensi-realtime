@@ -113,14 +113,16 @@ export async function POST(req: NextRequest) {
     });
 
     return NextResponse.json({
-      success: true,
-      attendanceId: attendance.id,
-      qrCodeValue: qrCode.code,
-      name: userAccess.name,
-      timestamp: Number(timestampStr) || Date.now(),
-      photoUrl,
-      message: "Absensi berhasil & QR dibuat",
-    });
+  success: true,
+  data: {
+    id: attendance.id,
+    qrCode: qrCode.code,
+    name: userAccess.name,
+    timestamp: Number(timestampStr) || Date.now(),
+    photoUrl,
+  },
+  message: "Absensi berhasil & QR dibuat",
+});
   } catch (error) {
     console.error("Error /api/v1/attendance:", error);
     return NextResponse.json(
