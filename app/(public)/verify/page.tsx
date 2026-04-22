@@ -31,6 +31,21 @@ function VerifyQRContent() {
   const [message, setMessage] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [qrType, setQrType] = useState<"CLOCK_IN" | "CLOCK_OUT" | null>(null);
+  const [needLogin, setNeedLogin] = useState(false);
+
+  const redirectToLogin = () => {
+    window.location.href = `/login?redirect=${encodeURIComponent(
+      `/verify?code=${code}`
+    )}`;
+  };
+
+  // Reset state when code changes
+  useEffect(() => {
+    setStatus("loading");
+    setMessage("");
+    setQrType(null);
+    setNeedLogin(false);
+  }, [code]);
 
   // ================= 1. CHECK QR =================
   useEffect(() => {
@@ -45,30 +60,25 @@ function VerifyQRContent() {
         const res = await fetch(
           `/api/v1/attendance/check-qr?code=${encodeURIComponent(code)}`,
           {
-            credentials: "include", // 🔥 penting kalau check butuh auth
+            credentials: "include",
           }
         );
 
-        let data: ApiResponse = {};
-        try {
-          data = await res.json();
-        } catch {}
+        const data: ApiResponse = await res.json().catch(() => ({}));
 
-        // 🔴 belum login
         if (res.status === 401) {
           setStatus("error");
+          setNeedLogin(true);
           setMessage("Silakan login terlebih dahulu.");
           return;
         }
 
-        // 🔴 error lain
         if (!res.ok) {
           setStatus("error");
           setMessage(data.message || data.error || "QR tidak valid");
           return;
         }
 
-        // ✅ success
         setQrType(data.data?.type ?? null);
         setStatus("ready");
         setMessage("QR valid, silakan lanjutkan absensi.");
@@ -93,32 +103,22 @@ function VerifyQRContent() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({
-          qrCode: code,
-        }),
+        body: JSON.stringify({ qrCode: code }),
       });
 
-      let data: ApiResponse = {};
-      try {
-        data = await res.json();
-      } catch {}
+      const data: ApiResponse = await res.json().catch(() => ({}));
 
-      // 🔴 belum login → redirect dengan query
       if (res.status === 401) {
-        window.location.href = `/login?redirect=${encodeURIComponent(
-          `/verify?code=${code}`
-        )}`;
+        redirectToLogin();
         return;
       }
 
-      // 🔴 error
       if (!res.ok) {
         setStatus("error");
         setMessage(data.error || data.message || "Gagal absen");
         return;
       }
 
-      // ✅ success
       setStatus("success");
       setMessage(data.message || "Absensi berhasil");
     } catch (error) {
@@ -133,7 +133,11 @@ function VerifyQRContent() {
   // ================= UI =================
 
   if (status === "loading") {
-    return <div className="p-10 text-center">Memuat QR...</div>;
+    return (
+      <div className="p-10 text-center">
+        <div className="animate-pulse text-gray-500">Memuat QR...</div>
+      </div>
+    );
   }
 
   if (status === "error") {
@@ -141,14 +145,16 @@ function VerifyQRContent() {
       <div className="p-10 text-center space-y-4">
         <p className="text-red-500 font-bold">{message}</p>
 
-        <Link
-          href={`/login?redirect=${encodeURIComponent(
-            `/verify?code=${code}`
-          )}`}
-          className="inline-block bg-indigo-600 text-white px-4 py-2 rounded"
-        >
-          Login untuk lanjut
-        </Link>
+        {needLogin && (
+          <Link
+            href={`/login?redirect=${encodeURIComponent(
+              `/verify?code=${code}`
+            )}`}
+            className="inline-block bg-indigo-600 text-white px-4 py-2 rounded"
+          >
+            Login untuk lanjut
+          </Link>
+        )}
       </div>
     );
   }
@@ -167,7 +173,9 @@ function VerifyQRContent() {
         <button
           onClick={handleAbsen}
           disabled={isSubmitting}
-          className="bg-indigo-600 text-white px-4 py-2 rounded"
+          className={`px-4 py-2 rounded text-white ${
+            isSubmitting ? "bg-gray-400" : "bg-indigo-600"
+          }`}
         >
           {isSubmitting ? "Memproses..." : "Klik untuk Absen"}
         </button>
