@@ -1,10 +1,14 @@
+import { Suspense } from "react";
 import { GalleryVerticalEnd } from "lucide-react";
 import Next from "@/public/next.svg";
 import Image from "next/image";
 import LoginForm from "./components/login-form";
 import Link from "next/link";
 
-export default function LoginPage() {
+// 🔥 WAJIB agar tidak prerender static
+export const dynamic = "force-dynamic";
+
+function LoginContent() {
   return (
     <div className="grid min-h-svh lg:grid-cols-2">
       <div className="flex flex-col gap-4 p-6 md:p-10">
@@ -16,12 +20,14 @@ export default function LoginPage() {
             Rapid Application Development
           </Link>
         </div>
+
         <div className="flex flex-1 items-center justify-center">
           <div className="w-full max-w-xs">
             <LoginForm />
           </div>
         </div>
       </div>
+
       <div className="bg-muted relative hidden lg:block">
         <Image
           src={Next}
@@ -30,5 +36,13 @@ export default function LoginPage() {
         />
       </div>
     </div>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense fallback={<div className="p-10 text-center">Loading...</div>}>
+      <LoginContent />
+    </Suspense>
   );
 }
