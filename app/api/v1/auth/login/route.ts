@@ -8,7 +8,7 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
 
-    // Validasi Zod
+    // 🔍 Validasi input
     const validation = loginSchema.safeParse(body);
 
     if (!validation.success) {
@@ -23,7 +23,7 @@ export async function POST(req: NextRequest) {
 
     const { email, password } = validation.data;
 
-    // Cek user
+    // 🔍 Cari user
     const user = await db.user.findUnique({
       where: { email },
     });
@@ -35,7 +35,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Cek password
+    // 🔐 Validasi password
     const isValid = await bcrypt.compare(password, user.password);
 
     if (!isValid) {
@@ -45,7 +45,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Generate fresh timestamps
+    // ⏱ Generate token
     const iat = Math.floor(Date.now() / 1000);
     const exp = iat + 60 * 60 * 24; // 1 hari
 
@@ -60,8 +60,10 @@ export async function POST(req: NextRequest) {
       iat,
     });
 
+    // 📦 Response
     const response = NextResponse.json(
       {
+        message: "Login berhasil",
         user: {
           userId: user.id,
           name: user.name,
@@ -74,25 +76,24 @@ export async function POST(req: NextRequest) {
       { status: 200 },
     );
 
+    // 🍪 SET COOKIE (🔥 FIX UTAMA DI SINI)
     response.cookies.set("access_token", token, {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
-      sameSite: "strict",
-      maxAge: 7 * 24 * 60 * 60, // 7 days
+      sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
       path: "/",
+      maxAge: 60 * 60 * 24 * 7,
     });
 
-    // Update last login
+    // 🔄 Update last login
     await db.user.update({
       where: { id: user.id },
       data: { updatedAt: new Date() },
     });
 
-    console.log(response);
-
     return response;
   } catch (error) {
-    console.error(error);
+    console.error("LOGIN ERROR:", error);
 
     return NextResponse.json(
       { message: "Internal server error" },

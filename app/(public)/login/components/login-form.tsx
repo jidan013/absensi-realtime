@@ -42,34 +42,47 @@ export default function LoginForm({
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({
-          email,
-          password,
-        }),
+        credentials: "include", // ✅ penting untuk cookie
+        body: JSON.stringify({ email, password }),
       });
 
-      const data = await res.json();
+      let data;
+      try {
+        data = await res.json();
+      } catch {
+        data = {};
+      }
 
-      console.log(data);
-
+      // ❌ Handle error dari backend
       if (!res.ok) {
+        let errorText = data.message || "Login gagal";
+
+        // 🔍 kalau error validasi dari Zod
+        if (data.errors) {
+          const firstError = Object.values(data.errors)[0];
+          if (Array.isArray(firstError)) {
+            errorText = firstError[0];
+          }
+        }
+
         setMessage({
           type: "error",
-          text: data.message || "Login gagal",
+          text: errorText,
         });
         return;
       }
 
+      // ✅ success
       setMessage({
         type: "success",
-        text: "Login berhasil! Mengarahkan...",
+        text: data.message || "Login berhasil",
       });
 
-      // cookie sudah diset dari backend
+      // redirect (kasih delay dikit biar user lihat success)
       setTimeout(() => {
-        router.push("/absensi"); // ubah sesuai halaman tujuan
-        router.refresh();
-      }, 1000);
+        router.replace("/absensi");
+      }, 500);
+
     } catch (err) {
       console.error(err);
       setMessage({
@@ -85,7 +98,8 @@ export default function LoginForm({
     <form
       onSubmit={handleSubmit}
       className={cn("flex flex-col gap-6", className)}
-      {...props}>
+      {...props}
+    >
       <FieldGroup>
         <div className="flex flex-col items-center gap-1 text-center">
           <h1 className="text-2xl font-bold">Login to your account</h1>
@@ -96,7 +110,8 @@ export default function LoginForm({
 
         {message.type && (
           <Alert
-            variant={message.type === "success" ? "default" : "destructive"}>
+            variant={message.type === "success" ? "default" : "destructive"}
+          >
             <AlertTitle>
               {message.type === "success" ? "Berhasil" : "Gagal"}
             </AlertTitle>
