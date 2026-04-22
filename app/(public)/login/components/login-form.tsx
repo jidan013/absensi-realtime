@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useMemo } from "react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
@@ -12,14 +12,34 @@ import {
   FieldSeparator,
 } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+
+// ✅ TYPE RESPONSE
+type LoginResponse = {
+  message?: string;
+  errors?: Record<string, string[]>;
+};
 
 export default function LoginForm({
   className,
   ...props
 }: React.ComponentProps<"form">) {
   const router = useRouter();
+  const searchParams = useSearchParams();
+
+  // 🔐 HANDLE REDIRECT AMAN
+  const redirect = useMemo(() => {
+    let r = searchParams.get("redirect") || "/absensi";
+
+    try {
+      r = decodeURIComponent(r);
+    } catch {}
+
+    if (!r.startsWith("/")) return "/absensi";
+
+    return r;
+  }, [searchParams]);
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -42,25 +62,26 @@ export default function LoginForm({
         headers: {
           "Content-Type": "application/json",
         },
-        credentials: "include", // ✅ penting untuk cookie
+        credentials: "include",
         body: JSON.stringify({ email, password }),
       });
 
-      let data;
+      // ✅ FIX: declare data properly
+      let data: LoginResponse = {};
+
       try {
         data = await res.json();
       } catch {
-        data = {};
+        // kalau response bukan JSON
       }
 
-      // ❌ Handle error dari backend
+      // ❌ ERROR
       if (!res.ok) {
         let errorText = data.message || "Login gagal";
 
-        // 🔍 kalau error validasi dari Zod
         if (data.errors) {
           const firstError = Object.values(data.errors)[0];
-          if (Array.isArray(firstError)) {
+          if (firstError && Array.isArray(firstError)) {
             errorText = firstError[0];
           }
         }
@@ -72,16 +93,15 @@ export default function LoginForm({
         return;
       }
 
-      // ✅ success
+      // ✅ SUCCESS
       setMessage({
         type: "success",
         text: data.message || "Login berhasil",
       });
 
-      // redirect (kasih delay dikit biar user lihat success)
       setTimeout(() => {
-        router.replace("/absensi");
-      }, 500);
+        router.replace(redirect);
+      }, 300);
 
     } catch (err) {
       console.error(err);
@@ -101,6 +121,7 @@ export default function LoginForm({
       {...props}
     >
       <FieldGroup>
+        {/* HEADER */}
         <div className="flex flex-col items-center gap-1 text-center">
           <h1 className="text-2xl font-bold">Login to your account</h1>
           <p className="text-muted-foreground text-sm">
@@ -108,6 +129,7 @@ export default function LoginForm({
           </p>
         </div>
 
+        {/* ALERT */}
         {message.type && (
           <Alert
             variant={message.type === "success" ? "default" : "destructive"}
@@ -119,6 +141,7 @@ export default function LoginForm({
           </Alert>
         )}
 
+        {/* EMAIL */}
         <Field>
           <FieldLabel>Email</FieldLabel>
           <Input
@@ -130,12 +153,13 @@ export default function LoginForm({
           />
         </Field>
 
+        {/* PASSWORD */}
         <Field>
           <div className="flex items-center">
             <FieldLabel>Password</FieldLabel>
-            <a className="ml-auto text-sm underline hover:underline">
+            <span className="ml-auto text-sm underline cursor-pointer opacity-70">
               Forgot password?
-            </a>
+            </span>
           </div>
           <Input
             type="password"
@@ -145,14 +169,16 @@ export default function LoginForm({
           />
         </Field>
 
+        {/* BUTTON */}
         <Field>
           <Button type="submit" disabled={loading}>
-            {loading ? "Loading..." : "Login"}
+            {loading ? "⏳ Loading..." : "Login"}
           </Button>
         </Field>
 
         <FieldSeparator />
 
+        {/* REGISTER */}
         <Field>
           <FieldDescription className="text-center">
             Don&apos;t have an account?{" "}
