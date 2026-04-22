@@ -1093,7 +1093,7 @@ export default function AbsensiClient() {
                                       <div className="absolute inset-0 flex items-center justify-center">
                                         <div className="bg-white dark:bg-white p-3 rounded-2xl shadow-xl">
                                           <QRCodeCanvas
-                                            value={`${typeof window !== "undefined" ? window.location.origin : ""}/absensi/verify?code=${encodeURIComponent(qrToken)}`}
+                                            value={`${typeof window !== "undefined" ? window.location.origin : ""}/verify?code=${encodeURIComponent(qrToken)}`}
                                             size={180}
                                             level="H"
                                             includeMargin={false}
