@@ -2,38 +2,48 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { isTokenExpiredRuntimeEdge } from "./lib/auth-edge";
 
-const publicPaths = ["/login", "/register"];
+// ✅ tambahkan verify sebagai public
+const publicPaths = ["/login", "/register", "/absensi/verify"];
 
 export const middleware = (request: NextRequest) => {
   const { pathname } = request.nextUrl;
   const token = request.cookies.get("access_token")?.value;
 
-  console.log("Current path:", pathname);
-  console.log("Token found:", !!token);
+  console.log("Path:", pathname);
+  console.log("Token:", !!token);
 
-  if (pathname === "/") return NextResponse.next();
+  // allow root
+  if (pathname === "/") {
+    return NextResponse.next();
+  }
 
-  // cek apakah token ada dan token apakah sudah expired
+  const isPublic = publicPaths.some((path) =>
+    pathname.startsWith(path)
+  );
+
+  // 🔐 cek token expired (hanya kalau ada token)
   if (token && isTokenExpiredRuntimeEdge(token)) {
-    console.log("Token is expired. Deleting cookie and redirecting to /login.");
     const response = NextResponse.redirect(new URL("/login", request.url));
     response.cookies.delete("access_token");
     return response;
   }
 
-  // cek apakah path publik dan token ada
-  if (publicPaths.some((path) => pathname.startsWith(path))) {
-    if (token) {
+  // ✅ kalau PUBLIC route
+  if (isPublic) {
+    // kalau sudah login & buka login/register → redirect ke dashboard
+    if (token && (pathname.startsWith("/login") || pathname.startsWith("/register"))) {
       return NextResponse.redirect(new URL("/absensi", request.url));
     }
+
     return NextResponse.next();
   }
 
-  // cek apakah token ada dan bukan path publik
+  // 🔒 PRIVATE route tapi tidak ada token
   if (!token) {
     return NextResponse.redirect(new URL("/login", request.url));
   }
 
+  // ✅ lolos semua
   return NextResponse.next();
 };
 
