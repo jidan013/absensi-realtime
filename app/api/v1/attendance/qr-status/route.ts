@@ -2,10 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/auth";
 import db from "@/lib/db";
 
-// Tipe QR dibaca dari prefix code:
-// ABSEN-IN-...  = clock in
-// ABSEN-OUT-... = clock out
-
+// Laptop polling endpoint: cek apakah user sudah absen hari ini
+// GET /api/v1/attendance/qr-status?token=ABSEN-xxx
 export async function GET(req: NextRequest) {
   try {
     const userAccess = await requireAuth();
@@ -14,42 +12,73 @@ export async function GET(req: NextRequest) {
     const token = searchParams.get("token");
 
     if (!token) {
-      return NextResponse.json({ error: "Token wajib diisi" }, { status: 400 });
+      return NextResponse.json(
+        { scanned: false, error: "Token tidak ditemukan." },
+        { status: 400 }
+      );
     }
 
-    const qrCode = await db.qRCode.findUnique({
+    // Cari QR berdasarkan token/code
+    const qr = await db.qRCode.findUnique({
       where: { code: token },
       include: {
-        user: { select: { name: true, email: true } },
+        user: { select: { name: true } },
       },
     });
 
-    if (!qrCode) {
-      return NextResponse.json({ scanned: false, error: "QR tidak ditemukan" });
+    if (!qr) {
+      return NextResponse.json(
+        { scanned: false, error: "QR tidak ditemukan." },
+        { status: 404 }
+      );
     }
 
-    if (qrCode.userId !== userAccess.userId) {
-      return NextResponse.json({ error: "Akses ditolak" }, { status: 403 });
+    // Pastikan QR milik user yang sedang login
+    if (qr.userId !== userAccess.userId) {
+      return NextResponse.json(
+        { scanned: false, error: "QR bukan milik Anda." },
+        { status: 403 }
+      );
     }
 
-    const isExpired = new Date() > qrCode.expiredAt;
-    const scanned = qrCode.isUsed;
+    // Jika QR belum dipakai, berarti belum di-scan
+    if (!qr.isUsed) {
+      return NextResponse.json({ scanned: false });
+    }
 
-    // Baca tipe dari prefix code
-    const qrType: "CLOCK_IN" | "CLOCK_OUT" = qrCode.code.startsWith("ABSEN-OUT-")
-      ? "CLOCK_OUT"
-      : "CLOCK_IN";
+    // QR sudah dipakai — cari attendance record hari ini
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+    const todayEnd = new Date();
+    todayEnd.setHours(23, 59, 59, 999);
 
+    const attendance = await db.attendance.findFirst({
+      where: {
+        userId: userAccess.userId,
+        qrId: qr.id,
+        clockIn: { gte: todayStart, lte: todayEnd },
+      },
+      select: {
+        id: true,
+        clockIn: true,
+      },
+    });
+
+    if (!attendance) {
+      return NextResponse.json({ scanned: false });
+    }
+
+    // ✅ Berhasil — return data yang dibutuhkan AbsensiClient
     return NextResponse.json({
-      scanned,
-      isExpired,
-      type: qrType,
-      name: scanned ? qrCode.user.name : null,
+      scanned: true,
+      attendanceId: attendance.id,       // ← dipakai untuk session
+      name: qr.user.name,                // ← dipakai untuk display nama
+      clockIn: attendance.clockIn?.toISOString() ?? null,
     });
   } catch (error) {
-    console.error("Error /api/v1/attendance/qr-status:", error);
+    console.error("QR STATUS ERROR:", error);
     return NextResponse.json(
-      { error: "Gagal mengecek status QR", details: (error as Error).message },
+      { scanned: false, error: "Terjadi kesalahan server." },
       { status: 500 }
     );
   }

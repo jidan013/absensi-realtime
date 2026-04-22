@@ -35,15 +35,15 @@ import FooterClient from "@/components/layouts/Footer";
 import { useUser } from "@/providers/auth-provider";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
-
-// ── Custom Hooks ──────────────────────────────────────────────────
 import { useCamera } from "@/hooks/useCamera";
-import { useGeolocation } from "@/hooks/useGeolocations";
+import { useGeolocation, type Coordinates } from "@/hooks/useGeolocations";
 
 // ── Types ─────────────────────────────────────────────────────────
 interface AttendanceResponse {
   success?: boolean;
   sessionToken?: string;
+  type?: "CLOCK_IN" | "CLOCK_OUT";
+  expiredAt?: string;
   data?: {
     id: string;
     qrCode: string;
@@ -59,10 +59,13 @@ interface CheckoutResponse {
   details?: string;
 }
 
+// Sinkron dengan /api/v1/attendance/qr-status response shape
 interface QRStatusResponse {
-  scanned?: boolean;
-  name?: string;
+  scanned: boolean;
+  isExpired?: boolean;
   attendanceId?: string;
+  name?: string;
+  clockIn?: string | null;
   error?: string;
 }
 
@@ -79,12 +82,6 @@ const QR_REFRESH_INTERVAL = 60;
 const SESSION_KEY = "absensi_checkin_session";
 
 // ── Helpers ───────────────────────────────────────────────────────
-const generateQRToken = (userId: string): string => {
-  const ts = Date.now();
-  const rand = Math.random().toString(36).substring(2, 10).toUpperCase();
-  return `ABSEN-${userId}-${ts}-${rand}`;
-};
-
 const formatDuration = (ms: number): string => {
   const totalSeconds = Math.floor(ms / 1000);
   const h = Math.floor(totalSeconds / 3600);
@@ -129,22 +126,17 @@ function SuccessPopup({ show, type, userName, duration }: SuccessPopupProps) {
             transition={{ type: "spring", stiffness: 350, damping: 28 }}
             className="relative bg-white dark:bg-gray-900 rounded-3xl shadow-2xl p-10 max-w-sm w-full text-center overflow-hidden"
           >
-            <div
-              className={`absolute top-0 left-0 right-0 h-1.5 rounded-t-3xl ${
-                isCheckout
-                  ? "bg-gradient-to-r from-orange-400 via-rose-500 to-pink-500"
-                  : "bg-gradient-to-r from-emerald-400 via-teal-500 to-cyan-500"
-              }`}
+            <div className={`absolute top-0 left-0 right-0 h-1.5 rounded-t-3xl ${isCheckout
+              ? "bg-gradient-to-r from-orange-400 via-rose-500 to-pink-500"
+              : "bg-gradient-to-r from-emerald-400 via-teal-500 to-cyan-500"}`}
             />
             <motion.div
               initial={{ scale: 0, rotate: -120 }}
               animate={{ scale: 1, rotate: 0 }}
               transition={{ type: "spring", stiffness: 300, damping: 20, delay: 0.1 }}
-              className={`mx-auto mb-6 w-24 h-24 rounded-full flex items-center justify-center shadow-xl ${
-                isCheckout
-                  ? "bg-gradient-to-br from-orange-400 to-rose-500"
-                  : "bg-gradient-to-br from-emerald-400 to-teal-500"
-              }`}
+              className={`mx-auto mb-6 w-24 h-24 rounded-full flex items-center justify-center shadow-xl ${isCheckout
+                ? "bg-gradient-to-br from-orange-400 to-rose-500"
+                : "bg-gradient-to-br from-emerald-400 to-teal-500"}`}
             >
               {isCheckout
                 ? <LogOut className="w-12 h-12 text-white" strokeWidth={2.5} />
@@ -163,11 +155,9 @@ function SuccessPopup({ show, type, userName, duration }: SuccessPopupProps) {
                 initial={{ opacity: 0, y: 8 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: 0.3 }}
-                className={`text-lg font-semibold mb-1 ${
-                  isCheckout
-                    ? "text-orange-500 dark:text-orange-400"
-                    : "text-emerald-600 dark:text-emerald-400"
-                }`}
+                className={`text-lg font-semibold mb-1 ${isCheckout
+                  ? "text-orange-500 dark:text-orange-400"
+                  : "text-emerald-600 dark:text-emerald-400"}`}
               >
                 {isCheckout ? `Sampai jumpa, ${userName}! 👋` : `Selamat datang, ${userName}! 👋`}
               </motion.p>
@@ -192,19 +182,16 @@ function SuccessPopup({ show, type, userName, duration }: SuccessPopupProps) {
               className="text-gray-500 dark:text-gray-400 text-sm mt-2"
             >
               {isCheckout ? "Kehadiran Anda telah selesai dicatat." : "Kehadiran Anda telah tercatat."}
-              <br />
-              Mengalihkan ke halaman utama...
+              <br />Mengalihkan ke halaman utama...
             </motion.p>
             <motion.div className="mt-6 h-1.5 rounded-full bg-gray-100 dark:bg-gray-800 overflow-hidden">
               <motion.div
                 initial={{ width: "0%" }}
                 animate={{ width: "100%" }}
                 transition={{ duration: 3.2, ease: "linear", delay: 0.4 }}
-                className={`h-full rounded-full ${
-                  isCheckout
-                    ? "bg-gradient-to-r from-orange-400 to-rose-500"
-                    : "bg-gradient-to-r from-emerald-400 to-teal-500"
-                }`}
+                className={`h-full rounded-full ${isCheckout
+                  ? "bg-gradient-to-r from-orange-400 to-rose-500"
+                  : "bg-gradient-to-r from-emerald-400 to-teal-500"}`}
               />
             </motion.div>
           </motion.div>
@@ -234,7 +221,6 @@ function CheckedInScreen({ session, onCheckOut, checkingOut }: CheckedInScreenPr
   const h = Math.floor(totalSeconds / 3600);
   const m = Math.floor((totalSeconds % 3600) / 60);
   const s = totalSeconds % 60;
-
   const workdayMs = 8 * 60 * 60 * 1000;
   const progress = Math.min(elapsed / workdayMs, 1);
   const radius = 88;
@@ -264,7 +250,8 @@ function CheckedInScreen({ session, onCheckOut, checkingOut }: CheckedInScreenPr
           <circle cx="110" cy="110" r={radius} fill="none" stroke="currentColor" className="text-gray-100 dark:text-gray-800" strokeWidth="8" />
           <circle
             cx="110" cy="110" r={radius} fill="none" stroke="url(#timerGrad)" strokeWidth="8"
-            strokeLinecap="round" strokeDasharray={circumference} strokeDashoffset={circumference * (1 - progress)}
+            strokeLinecap="round" strokeDasharray={circumference}
+            strokeDashoffset={circumference * (1 - progress)}
             style={{ transition: "stroke-dashoffset 1s linear" }}
           />
           <defs>
@@ -289,7 +276,9 @@ function CheckedInScreen({ session, onCheckOut, checkingOut }: CheckedInScreenPr
             <CalendarCheck className="w-4 h-4 text-indigo-500" />
             <p className="text-xs text-indigo-600 dark:text-indigo-400 font-bold uppercase tracking-wider">Jam Masuk</p>
           </div>
-          <p className="text-xl font-black text-indigo-700 dark:text-indigo-300 tabular-nums">{formatTime(session.checkInTime)}</p>
+          <p className="text-xl font-black text-indigo-700 dark:text-indigo-300 tabular-nums">
+            {formatTime(session.checkInTime)}
+          </p>
           <p className="text-xs text-indigo-500/70 dark:text-indigo-400/60 mt-1 leading-tight">{checkInDate}</p>
         </div>
         <div className="bg-gradient-to-br from-purple-50 to-purple-100 dark:from-purple-900/30 dark:to-purple-900/10 rounded-2xl p-5 border border-purple-200 dark:border-purple-800">
@@ -338,26 +327,19 @@ export default function AbsensiClient() {
   const { user } = useUser();
   const router = useRouter();
 
-  // ── App state ──
   const [mode, setMode] = useState<AbsenMode>("face");
   const [appStep, setAppStep] = useState<AppStep>("form");
   const [checkInSession, setCheckInSession] = useState<CheckInSession | null>(null);
   const [checkingOut, setCheckingOut] = useState<boolean>(false);
 
-  // ── Refs ──
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const nameInputRef = useRef<HTMLInputElement | null>(null);
   const qrRefreshRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // ── Custom hooks ──────────────────────────────────────────────
-  // useCamera: mengelola stream kamera, start/stop, cleanup otomatis
   const camera = useCamera(videoRef);
-
-  // useGeolocation: watchPosition + retry + IP fallback, cleanup otomatis
   const geo = useGeolocation();
 
-  // ── Face state ──
   const [photoBlob, setPhotoBlob] = useState<Blob | null>(null);
   const [photoURL, setPhotoURL] = useState<string>("");
   const [uploading, setUploading] = useState<boolean>(false);
@@ -365,13 +347,11 @@ export default function AbsensiClient() {
   const [name, setName] = useState<string>("");
   const [showConfetti, setShowConfetti] = useState<boolean>(false);
 
-  // ── Success popup ──
   const [showSuccessPopup, setShowSuccessPopup] = useState<boolean>(false);
   const [successType, setSuccessType] = useState<"checkin" | "checkout">("checkin");
   const [successName, setSuccessName] = useState<string>("");
   const [successDuration, setSuccessDuration] = useState<string>("");
 
-  // ── QR state ──
   const [qrToken, setQrToken] = useState<string>("");
   const [qrCountdown, setQrCountdown] = useState<number>(QR_REFRESH_INTERVAL);
   const [qrSubmitting, setQrSubmitting] = useState<boolean>(false);
@@ -380,7 +360,7 @@ export default function AbsensiClient() {
 
   const { width, height } = useWindowSize();
 
-  // ── Restore session ──
+  // ── Restore session dari localStorage ──
   useEffect(() => {
     try {
       const stored = localStorage.getItem(SESSION_KEY);
@@ -407,7 +387,7 @@ export default function AbsensiClient() {
     if (user?.name && !name.trim()) setName(user.name);
   }, [user]); // eslint-disable-line
 
-  // ── Success popup + redirect ──
+  // ── Trigger success popup + redirect ──
   const triggerSuccessAndRedirect = useCallback((
     type: "checkin" | "checkout",
     displayName?: string,
@@ -429,11 +409,9 @@ export default function AbsensiClient() {
   const handleCheckOut = useCallback(async (): Promise<void> => {
     if (!checkInSession) return;
     setCheckingOut(true);
-
     const checkOutTime = Date.now();
     const durationMs = checkOutTime - checkInSession.checkInTime;
     const durationStr = formatDuration(durationMs);
-
     try {
       const res = await fetch("/api/v1/attendance/clockout", {
         method: "POST",
@@ -442,16 +420,14 @@ export default function AbsensiClient() {
           attendanceId: checkInSession.attendanceId,
           checkOutTime,
           durationMs,
-          lat: geo.coords.lat,  // ← dari useGeolocation
-          lon: geo.coords.lon,  // ← dari useGeolocation
+          lat: geo.coords.lat,
+          lon: geo.coords.lon,
         }),
       });
-
       if (!res.ok) {
         const data = (await res.json()) as CheckoutResponse;
         throw new Error(data.error ?? "Gagal menyimpan absen pulang");
       }
-
       localStorage.removeItem(SESSION_KEY);
       setCheckInSession(null);
       setAppStep("form");
@@ -501,7 +477,7 @@ export default function AbsensiClient() {
   useEffect(() => () => { if (photoURL) URL.revokeObjectURL(photoURL); }, [photoURL]);
 
   const resetFaceForm = useCallback((): void => {
-    camera.stop();           // ← dari useCamera
+    camera.stop();
     setName("");
     setPhotoBlob(null);
     setPhotoURL("");
@@ -510,14 +486,40 @@ export default function AbsensiClient() {
     toast.info("Form di-reset");
   }, [camera]);
 
-  // ── QR Session ──
-  const refreshQRToken = useCallback((): void => {
-    const token = generateQRToken(user?.userId ?? "USER");
-    setQrToken(token);
+  // ── QR: stop session ──
+  const stopQRSession = useCallback((): void => {
+    if (qrRefreshRef.current) clearInterval(qrRefreshRef.current);
+    setQrSessionActive(false);
+    setQrToken("");
     setQrCountdown(QR_REFRESH_INTERVAL);
     setQrScanned(false);
-  }, [user?.userId]);
+  }, []);
 
+  // ── QR: refresh token via API (reuse jika masih aktif) ──
+  const refreshQRToken = useCallback(async (): Promise<void> => {
+    try {
+      const res = await fetch("/api/v1/attendance/qr-session", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          lat: geo.coords.lat,
+          lon: geo.coords.lon,
+          accuracy: geo.coords.accuracy,
+          timestamp: geo.coords.timestamp ?? Date.now(),
+        }),
+      });
+      if (!res.ok) throw new Error("Gagal refresh");
+      const data = (await res.json()) as AttendanceResponse;
+      if (!data.sessionToken) throw new Error("Token kosong");
+      setQrToken(data.sessionToken);
+      setQrCountdown(QR_REFRESH_INTERVAL);
+      setQrScanned(false);
+    } catch {
+      toast.warning("Gagal refresh QR dari server.");
+    }
+  }, [geo.coords]);
+
+  // ── QR: start session ──
   const startQRSession = useCallback(async (): Promise<void> => {
     setQrSubmitting(true);
     try {
@@ -525,8 +527,8 @@ export default function AbsensiClient() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          lat: geo.coords.lat,        // ← dari useGeolocation
-          lon: geo.coords.lon,        // ← dari useGeolocation
+          lat: geo.coords.lat,
+          lon: geo.coords.lon,
           accuracy: geo.coords.accuracy,
           timestamp: geo.coords.timestamp ?? Date.now(),
         }),
@@ -536,37 +538,26 @@ export default function AbsensiClient() {
         throw new Error(d.error ?? "Gagal membuat sesi QR");
       }
       const data = (await res.json()) as AttendanceResponse;
-      const token = data.sessionToken ?? generateQRToken(user?.userId ?? "USER");
-      setQrToken(token);
+      if (!data.sessionToken) throw new Error("Token tidak ada di response");
+      setQrToken(data.sessionToken);
       setQrCountdown(QR_REFRESH_INTERVAL);
       setQrScanned(false);
       setQrSessionActive(true);
       toast.success("Sesi QR berhasil dibuat!");
-    } catch {
-      refreshQRToken();
-      setQrSessionActive(true);
-      toast.info("Sesi QR dibuat secara lokal.");
+    } catch (err) {
+      toast.error("Gagal membuat QR: " + (err instanceof Error ? err.message : "Error"));
     } finally {
       setQrSubmitting(false);
     }
-  }, [geo.coords, user?.userId, refreshQRToken]);
+  }, [geo.coords]);
 
-  const stopQRSession = useCallback((): void => {
-    if (qrRefreshRef.current) clearInterval(qrRefreshRef.current);
-    setQrSessionActive(false);
-    setQrToken("");
-    setQrCountdown(QR_REFRESH_INTERVAL);
-    setQrScanned(false);
-    toast.info("Sesi QR dihentikan.");
-  }, []);
-
-  // QR countdown timer
+  // ── QR countdown: auto-refresh via API tiap 60 detik ──
   useEffect(() => {
     if (!qrSessionActive || qrScanned) return;
     const interval = setInterval(() => {
       setQrCountdown((prev) => {
         if (prev <= 1) {
-          refreshQRToken();
+          void refreshQRToken();
           toast.info("QR Code diperbarui otomatis.");
           return QR_REFRESH_INTERVAL;
         }
@@ -577,38 +568,64 @@ export default function AbsensiClient() {
     return () => clearInterval(interval);
   }, [qrSessionActive, qrScanned, refreshQRToken]);
 
-  // QR polling (cek apakah sudah di-scan)
+  // ── QR polling: cek /qr-status setiap 2 detik ──
   useEffect(() => {
     if (!qrSessionActive || !qrToken || qrScanned) return;
+
     const poll = setInterval(async () => {
       try {
-        const res = await fetch(`/api/v1/attendance/qr-status?token=${encodeURIComponent(qrToken)}`);
+        const res = await fetch(
+          `/api/v1/attendance/qr-status?token=${encodeURIComponent(qrToken)}`
+        );
         if (!res.ok) return;
+
         const data = (await res.json()) as QRStatusResponse;
+
+        // QR expired di server sebelum di-scan → refresh token baru
+        if (data.isExpired && !data.scanned) {
+          void refreshQRToken();
+          return;
+        }
+
+        // ✅ QR berhasil di-scan oleh HP
         if (data.scanned && data.attendanceId) {
-          setQrScanned(true);
           clearInterval(poll);
+
+          // Tampilkan overlay "Absensi Tercatat!" dulu
+          setQrScanned(true);
+
+          // clockIn dari server = waktu akurat, bukan waktu browser
+          const checkInTime = data.clockIn
+            ? new Date(data.clockIn).getTime()
+            : Date.now();
+
           const session: CheckInSession = {
             attendanceId: data.attendanceId,
-            name: data.name ?? "User",
-            checkInTime: Date.now(),
+            name: data.name ?? user?.name ?? "User",
+            checkInTime,
           };
+
           localStorage.setItem(SESSION_KEY, JSON.stringify(session));
           setCheckInSession(session);
-          setAppStep("checked-in");
-          triggerSuccessAndRedirect("checkin", session.name);
+
+          // Delay 1.5s agar overlay terlihat sebelum pindah ke checked-in screen
+          setTimeout(() => {
+            setAppStep("checked-in");
+            triggerSuccessAndRedirect("checkin", session.name);
+          }, 1500);
         }
       } catch { /* silent */ }
     }, 2000);
-    return () => clearInterval(poll);
-  }, [qrSessionActive, qrToken, qrScanned, refreshQRToken, triggerSuccessAndRedirect]);
 
-  // Stop camera/QR session saat ganti mode
+    return () => clearInterval(poll);
+  }, [qrSessionActive, qrToken, qrScanned, user, refreshQRToken, triggerSuccessAndRedirect]);
+
+  // ── Ganti mode ──
   useEffect(() => {
     if (mode === "face") {
       stopQRSession();
     } else {
-      camera.stop();         // ← dari useCamera
+      camera.stop();
       setPhotoBlob(null);
       setPhotoURL("");
     }
@@ -629,8 +646,8 @@ export default function AbsensiClient() {
     try {
       const formData = new FormData();
       formData.append("name", name);
-      formData.append("lat", geo.coords.lat?.toString() ?? "");    // ← dari useGeolocation
-      formData.append("lon", geo.coords.lon?.toString() ?? "");    // ← dari useGeolocation
+      formData.append("lat", geo.coords.lat?.toString() ?? "");
+      formData.append("lon", geo.coords.lon?.toString() ?? "");
       formData.append("accuracy", geo.coords.accuracy?.toString() ?? "");
       formData.append("timestamp", geo.coords.timestamp?.toString() ?? Date.now().toString());
       formData.append("photo", photoBlob, `absensi_${Date.now()}.jpg`);
@@ -645,7 +662,6 @@ export default function AbsensiClient() {
       }
 
       const data = (await res.json()) as AttendanceResponse;
-
       if (!data.data?.id) {
         throw new Error("Server tidak mengembalikan ID absensi. Hubungi administrator.");
       }
@@ -657,7 +673,6 @@ export default function AbsensiClient() {
       };
       localStorage.setItem(SESSION_KEY, JSON.stringify(session));
       setCheckInSession(session);
-
       resetFaceForm();
       setAppStep("checked-in");
       triggerSuccessAndRedirect("checkin", name.trim());
@@ -675,7 +690,6 @@ export default function AbsensiClient() {
       if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); void submitFace(); }
       if (e.key === "Escape") { e.preventDefault(); if (mode === "face") resetFaceForm(); else stopQRSession(); }
       if (e.key === " " && camera.active && !photoURL) { e.preventDefault(); capturePhoto(); }
-      //                     ↑ camera.active dari useCamera
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
@@ -716,18 +730,15 @@ export default function AbsensiClient() {
                 {appStep === "form" && (
                   <motion.div key="form" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
 
-                    {/* Mode Toggle */}
                     <div className="flex justify-center mb-10">
                       <div className="flex bg-gray-100 dark:bg-gray-900 rounded-2xl p-1.5 shadow-inner ring-1 ring-black/5 dark:ring-white/10 gap-1">
                         {(["face", "qr"] as AbsenMode[]).map((m) => (
                           <button
                             key={m}
                             onClick={() => setMode(m)}
-                            className={`flex items-center gap-2.5 px-7 py-3.5 rounded-xl font-bold text-base transition-all duration-300 ${
-                              mode === m
-                                ? "bg-gradient-to-r from-indigo-600 to-purple-600 text-white shadow-lg scale-105"
-                                : "text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
-                            }`}
+                            className={`flex items-center gap-2.5 px-7 py-3.5 rounded-xl font-bold text-base transition-all duration-300 ${mode === m
+                              ? "bg-gradient-to-r from-indigo-600 to-purple-600 text-white shadow-lg scale-105"
+                              : "text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"}`}
                           >
                             {m === "face" ? <Camera className="w-5 h-5" /> : <QrCode className="w-5 h-5" />}
                             {m === "face" ? "Selfie / Foto" : "QR Code Absensi"}
@@ -740,11 +751,7 @@ export default function AbsensiClient() {
 
                       {/* ── FACE MODE ── */}
                       {mode === "face" && (
-                        <motion.div
-                          key="face"
-                          initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }}
-                          exit={{ opacity: 0, x: -20 }} transition={{ duration: 0.25 }}
-                        >
+                        <motion.div key="face" initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} transition={{ duration: 0.25 }}>
                           <form onSubmit={(e) => void submitFace(e)} className="space-y-12">
                             <div className="relative group">
                               <label className="flex items-center gap-3 text-lg font-bold text-gray-800 dark:text-white">
@@ -771,7 +778,6 @@ export default function AbsensiClient() {
                                   <video ref={videoRef} playsInline className="w-full aspect-video object-cover" />
                                   <canvas ref={canvasRef} className="hidden" />
                                   {!camera.active && !photoURL && (
-                                    // ↑ camera.active dari useCamera
                                     <div className="absolute inset-0 bg-gradient-to-t from-black/80 to-transparent flex items-end justify-center pb-10">
                                       <p className="text-white text-2xl font-bold tracking-wider text-center px-6">
                                         Tekan tombol untuk mengaktifkan kamera
@@ -783,7 +789,6 @@ export default function AbsensiClient() {
                                   <button
                                     type="button"
                                     onClick={() => camera.active ? camera.stop() : void camera.start()}
-                                    // ↑ camera.active / camera.stop / camera.start dari useCamera
                                     className="flex-1 px-8 py-5 bg-gradient-to-r from-indigo-600 to-purple-600 text-white font-bold text-lg rounded-2xl shadow-xl hover:shadow-2xl transform hover:scale-105 transition-all flex items-center justify-center gap-3"
                                   >
                                     <Camera className="w-6 h-6" />
@@ -791,7 +796,7 @@ export default function AbsensiClient() {
                                   </button>
                                   <button
                                     type="button"
-                                    disabled={!camera.active}    // ← camera.active dari useCamera
+                                    disabled={!camera.active}
                                     onClick={capturePhoto}
                                     className="px-10 py-5 bg-white dark:bg-gray-900 border-2 border-gray-300 dark:border-gray-700 rounded-2xl font-bold text-lg hover:shadow-lg disabled:opacity-50 flex items-center gap-3"
                                   >
@@ -830,13 +835,7 @@ export default function AbsensiClient() {
                                   )}
                                 </AnimatePresence>
                               </div>
-
-                              {/* LocationPanel menerima data dari useGeolocation */}
-                              <LocationPanel
-                                coords={geo.coords}
-                                locationStatus={geo.status}
-                                locationErrorMsg={geo.error}
-                              />
+                              <LocationPanel coords={geo.coords} locationStatus={geo.status} locationErrorMsg={geo.error} />
                             </div>
 
                             <div className="pt-8 flex flex-col sm:flex-row gap-6 items-center">
@@ -874,11 +873,7 @@ export default function AbsensiClient() {
 
                       {/* ── QR MODE ── */}
                       {mode === "qr" && (
-                        <motion.div
-                          key="qr"
-                          initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }}
-                          exit={{ opacity: 0, x: 20 }} transition={{ duration: 0.25 }}
-                        >
+                        <motion.div key="qr" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 20 }} transition={{ duration: 0.25 }}>
                           <div className="grid lg:grid-cols-2 gap-10">
                             <div className="space-y-6">
                               <h3 className="flex items-center gap-3 text-2xl font-bold text-gray-800 dark:text-white">
@@ -904,6 +899,7 @@ export default function AbsensiClient() {
                                     </motion.div>
                                   )}
                                 </AnimatePresence>
+
                                 {qrSessionActive && qrToken ? (
                                   <div className="flex flex-col items-center gap-6">
                                     <div className="relative">
@@ -948,7 +944,7 @@ export default function AbsensiClient() {
                                     </div>
                                     <div className="flex gap-3 w-full">
                                       <button
-                                        onClick={refreshQRToken}
+                                        onClick={() => void refreshQRToken()}
                                         className="flex-1 flex items-center justify-center gap-2 px-5 py-3.5 bg-indigo-50 dark:bg-indigo-900/30 border border-indigo-200 dark:border-indigo-700 text-indigo-700 dark:text-indigo-300 font-bold rounded-2xl hover:bg-indigo-100 dark:hover:bg-indigo-900/50 transition-all text-sm"
                                       >
                                         <RefreshCw className="w-4 h-4" />
@@ -989,20 +985,22 @@ export default function AbsensiClient() {
                                   </div>
                                 )}
                               </div>
+
                               <div className="bg-blue-50 dark:bg-blue-900/20 rounded-2xl p-5 border border-blue-200 dark:border-blue-800">
                                 <div className="flex items-start gap-3">
                                   <ShieldCheck className="w-5 h-5 text-blue-600 dark:text-blue-400 mt-0.5 flex-shrink-0" />
                                   <div className="text-sm text-blue-700 dark:text-blue-300 space-y-1">
                                     <p className="font-bold">Cara absen dengan QR:</p>
                                     <ol className="list-decimal list-inside space-y-1 text-blue-600 dark:text-blue-400">
-                                      <li>Tekan <b>Buat QR Absensi</b></li>
-                                      <li>Tunjukkan QR ke peserta / tampilkan di layar</li>
-                                      <li>Peserta scan QR dengan HP mereka</li>
-                                      <li>Absensi otomatis tercatat — QR refresh tiap {QR_REFRESH_INTERVAL}s</li>
+                                      <li>Tekan <b>Buat QR Absensi</b> di laptop</li>
+                                      <li>Scan QR dengan kamera HP Anda</li>
+                                      <li>Konfirmasi absensi di HP</li>
+                                      <li>Laptop otomatis update — QR refresh tiap {QR_REFRESH_INTERVAL}s</li>
                                     </ol>
                                   </div>
                                 </div>
                               </div>
+
                               {user && (
                                 <div className="flex items-center gap-4 p-5 bg-gradient-to-r from-indigo-50 to-purple-50 dark:from-indigo-900/20 dark:to-purple-900/20 rounded-2xl border border-indigo-200 dark:border-indigo-800">
                                   <div className="w-12 h-12 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white font-black text-xl">
@@ -1021,13 +1019,7 @@ export default function AbsensiClient() {
                                 </div>
                               )}
                             </div>
-
-                            {/* LocationPanel menerima data dari useGeolocation */}
-                            <LocationPanel
-                              coords={geo.coords}
-                              locationStatus={geo.status}
-                              locationErrorMsg={geo.error}
-                            />
+                            <LocationPanel coords={geo.coords} locationStatus={geo.status} locationErrorMsg={geo.error} />
                           </div>
                           <div className="mt-10 text-center text-gray-500 dark:text-gray-400 text-sm">
                             QR Code diperbarui otomatis setiap <b>{QR_REFRESH_INTERVAL} detik</b> untuk keamanan. Izinkan akses <b>Lokasi</b>.
@@ -1048,8 +1040,6 @@ export default function AbsensiClient() {
 }
 
 // ── LocationPanel ─────────────────────────────────────────────────
-import type { Coordinates } from "@/hooks/useGeolocations";
-
 interface LocationPanelProps {
   coords: Coordinates;
   locationStatus: string;
@@ -1087,10 +1077,10 @@ function LocationPanel({ coords, locationStatus, locationErrorMsg }: LocationPan
       )}
       <div className="grid grid-cols-2 gap-5">
         {([
-          { label: "Latitude",  value: coords.lat      ? coords.lat.toFixed(6)             : "..." },
-          { label: "Longitude", value: coords.lon      ? coords.lon.toFixed(6)             : "..." },
-          { label: "Akurasi",   value: coords.accuracy ? `${coords.accuracy.toFixed(0)} m` : "..." },
-          { label: "Waktu",     value: coords.timestamp ? new Date(coords.timestamp).toLocaleTimeString("id-ID") : "..." },
+          { label: "Latitude", value: coords.lat ? coords.lat.toFixed(6) : "..." },
+          { label: "Longitude", value: coords.lon ? coords.lon.toFixed(6) : "..." },
+          { label: "Akurasi", value: coords.accuracy ? `${coords.accuracy.toFixed(0)} m` : "..." },
+          { label: "Waktu", value: coords.timestamp ? new Date(coords.timestamp).toLocaleTimeString("id-ID") : "..." },
         ] as const).map((item, i) => (
           <div key={i} className="bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-900 dark:to-gray-800 p-6 rounded-2xl shadow-lg border border-gray-200/50 dark:border-gray-800">
             <p className="text-sm text-gray-600 dark:text-gray-400">{item.label}</p>

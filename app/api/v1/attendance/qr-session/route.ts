@@ -2,10 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/auth";
 import db from "@/lib/db";
 
-// Tanpa field 'type' di schema — tipe dibaca dari prefix code:
-// ABSEN-IN-...  = clock in
-// ABSEN-OUT-... = clock out
-
 export async function POST(req: NextRequest) {
   try {
     const userAccess = await requireAuth();
@@ -13,15 +9,14 @@ export async function POST(req: NextRequest) {
     const body = (await req.json()) as {
       lat?: number;
       lon?: number;
-      accuracy?: number;
-      timestamp?: number;
     };
 
     const { lat, lon } = body;
 
-    // ── Cek kondisi absensi hari ini ──────────────────────────────
+    // ── cek attendance hari ini ──
     const todayStart = new Date();
     todayStart.setHours(0, 0, 0, 0);
+
     const todayEnd = new Date();
     todayEnd.setHours(23, 59, 59, 999);
 
@@ -32,7 +27,7 @@ export async function POST(req: NextRequest) {
       },
     });
 
-    // Tentukan tipe dari prefix code
+    // ── tentukan mode ──
     let qrType: "CLOCK_IN" | "CLOCK_OUT";
 
     if (!todayAttendance) {
@@ -42,43 +37,46 @@ export async function POST(req: NextRequest) {
     } else {
       return NextResponse.json(
         {
-          error: "Anda sudah melakukan absen masuk dan pulang hari ini.",
+          error: "Anda sudah absen masuk & pulang hari ini.",
           alreadyDone: true,
         },
         { status: 400 }
       );
     }
 
-    // ── Expired-kan QR lama yang belum dipakai ────────────────────
     const prefix = qrType === "CLOCK_IN" ? "ABSEN-IN-" : "ABSEN-OUT-";
 
-    const oldQRs: { id: string }[] = await db.qRCode.findMany({
+    // ── 🔥 FIX UTAMA: REUSE QR AKTIF ──
+    const existingQR = await db.qRCode.findFirst({
       where: {
         userId: userAccess.userId,
-        isUsed: false,
-        date: { gte: todayStart, lte: todayEnd },
         code: { startsWith: prefix },
+        expiredAt: { gt: new Date() },
+        isUsed: false,
       },
-      select: { id: true },
+      orderBy: {
+        createdAt: "desc",
+      },
     });
 
-    if (oldQRs.length > 0) {
-      await db.qRCode.updateMany({
-        where: {
-          id: { in: oldQRs.map((q: { id: string }) => q.id) },
-        },
-        data: { expiredAt: new Date() },
+    if (existingQR) {
+      return NextResponse.json({
+        success: true,
+        sessionToken: existingQR.code,
+        type: qrType,
+        expiredAt: existingQR.expiredAt.toISOString(),
+        message: "QR masih aktif (reuse session)",
       });
     }
 
-    // ── Buat QR baru ──────────────────────────────────────────────
+    // ── buat QR baru hanya jika tidak ada ──
     const now = new Date();
     const dateStr = now.toISOString().slice(0, 10).replace(/-/g, "");
     const randomPart = crypto.randomUUID().slice(0, 8).toUpperCase();
+
     const sessionToken = `${prefix}${dateStr}-${userAccess.userId}-${randomPart}`;
 
-    const expiredAt = new Date();
-    expiredAt.setSeconds(expiredAt.getSeconds() + 60);
+    const expiredAt = new Date(Date.now() + 60 * 1000); // 60 detik
 
     const qrCode = await db.qRCode.create({
       data: {
@@ -90,10 +88,14 @@ export async function POST(req: NextRequest) {
       },
     });
 
-    // Simpan lokasi sesi kalau ada
+    // ── optional location ──
     if (lat != null && lon != null) {
       await db.location.create({
-        data: { latitude: lat, longitude: lon, address: null },
+        data: {
+          latitude: lat,
+          longitude: lon,
+          address: null,
+        },
       });
     }
 
@@ -104,13 +106,13 @@ export async function POST(req: NextRequest) {
       expiredAt: qrCode.expiredAt.toISOString(),
       message:
         qrType === "CLOCK_IN"
-          ? "QR absen masuk berhasil dibuat"
-          : "QR absen pulang berhasil dibuat",
+          ? "QR absen masuk dibuat"
+          : "QR absen pulang dibuat",
     });
   } catch (error) {
-    console.error("Error /api/v1/attendance/qr-session:", error);
+    console.error("QR SESSION ERROR:", error);
     return NextResponse.json(
-      { error: "Gagal membuat sesi QR", details: (error as Error).message },
+      { error: "Gagal membuat QR session", details: (error as Error).message },
       { status: 500 }
     );
   }
