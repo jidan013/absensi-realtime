@@ -2,25 +2,34 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/auth";
 import db from "@/lib/db";
 
-// Tipe QR dibaca dari prefix code:
-// ABSEN-IN-...  = clock in
-// ABSEN-OUT-... = clock out
-
 export async function GET(req: NextRequest) {
   try {
-    const userAccess = await requireAuth();
+    // ================= AUTH =================
+    let userAccess;
+    try {
+      userAccess = await requireAuth();
+    } catch {
+      return NextResponse.json(
+        {
+          success: false,
+          message: "Silakan login terlebih dahulu.",
+        },
+        { status: 401 }
+      );
+    }
 
+    // ================= PARAM =================
     const { searchParams } = new URL(req.url);
     const code = searchParams.get("code");
 
     if (!code) {
       return NextResponse.json(
-        { success: false, message: "QR Code tidak ditemukan dalam URL." },
+        { success: false, message: "QR Code tidak ditemukan." },
         { status: 400 }
       );
     }
 
-    // 1. Cari QR
+    // ================= GET QR =================
     const qr = await db.qRCode.findUnique({
       where: { code },
       include: {
@@ -30,52 +39,50 @@ export async function GET(req: NextRequest) {
 
     if (!qr) {
       return NextResponse.json(
-        { success: false, message: "QR Code tidak valid atau tidak ditemukan." },
+        { success: false, message: "QR Code tidak valid." },
         { status: 404 }
       );
     }
 
-    // 2. QR harus milik user yang scan
+    // ================= VALIDASI USER =================
     if (qr.userId !== userAccess.userId) {
       return NextResponse.json(
         {
           success: false,
-          message: "QR Code bukan milik Anda. Gunakan QR milik Anda sendiri.",
+          message: "QR bukan milik Anda.",
         },
         { status: 403 }
       );
     }
 
-    // 3. Cek expired
+    // ================= VALIDASI QR =================
     if (new Date() > qr.expiredAt) {
       return NextResponse.json(
-        {
-          success: false,
-          message: "QR Code sudah kadaluarsa (lebih dari 60 detik). Minta QR baru.",
-        },
+        { success: false, message: "QR sudah kadaluarsa." },
         { status: 400 }
       );
     }
 
-    // 4. Cek sudah dipakai
     if (qr.isUsed) {
       return NextResponse.json(
-        { success: false, message: "QR Code sudah pernah digunakan." },
+        { success: false, message: "QR sudah digunakan." },
         { status: 400 }
       );
     }
 
-    // 5. Baca tipe dari prefix code
+    // ================= TIPE QR =================
     const qrType: "CLOCK_IN" | "CLOCK_OUT" = qr.code.startsWith("ABSEN-OUT-")
       ? "CLOCK_OUT"
       : "CLOCK_IN";
 
-    // 6. Ambil data absensi hari ini
+    // ================= TANGGAL =================
     const todayStart = new Date();
     todayStart.setHours(0, 0, 0, 0);
+
     const todayEnd = new Date();
     todayEnd.setHours(23, 59, 59, 999);
 
+    // ================= CEK ABSENSI =================
     const todayAttendance = await db.attendance.findFirst({
       where: {
         userId: userAccess.userId,
@@ -90,11 +97,11 @@ export async function GET(req: NextRequest) {
 
     const now = new Date();
 
-    // ── CLOCK IN ──────────────────────────────────────────────────
+    // ================= CLOCK IN =================
     if (qrType === "CLOCK_IN") {
       if (todayAttendance) {
         return NextResponse.json(
-          { success: false, message: "Anda sudah absen masuk hari ini." },
+          { success: false, message: "Sudah absen masuk hari ini." },
           { status: 400 }
         );
       }
@@ -104,7 +111,6 @@ export async function GET(req: NextRequest) {
           userId: userAccess.userId,
           qrId: qr.id,
           clockIn: now,
-          locationId: null,
         },
         include: {
           location: {
@@ -121,13 +127,9 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({
         success: true,
         type: "CLOCK_IN",
-        message: "Absen masuk berhasil dicatat.",
+        message: "Absen masuk berhasil",
         data: {
-          user: {
-            name: qr.user.name,
-            email: qr.user.email,
-            position: qr.user.position,
-          },
+          user: qr.user,
           attendance: {
             id: attendance.id,
             clockIn: now.toISOString(),
@@ -138,17 +140,17 @@ export async function GET(req: NextRequest) {
       });
     }
 
-    // ── CLOCK OUT ─────────────────────────────────────────────────
+    // ================= CLOCK OUT =================
     if (!todayAttendance) {
       return NextResponse.json(
-        { success: false, message: "Anda belum absen masuk hari ini." },
+        { success: false, message: "Belum absen masuk." },
         { status: 400 }
       );
     }
 
     if (todayAttendance.clockOut) {
       return NextResponse.json(
-        { success: false, message: "Anda sudah absen pulang hari ini." },
+        { success: false, message: "Sudah absen pulang." },
         { status: 400 }
       );
     }
@@ -168,23 +170,20 @@ export async function GET(req: NextRequest) {
       data: { isUsed: true },
     });
 
-    // Hitung durasi kerja
+    // ================= DURASI =================
     const clockInTime = todayAttendance.clockIn ?? now;
     const durasiMs = now.getTime() - clockInTime.getTime();
-    const durasiJam = Math.floor(durasiMs / (1000 * 60 * 60));
-    const durasiMenit = Math.floor((durasiMs % (1000 * 60 * 60)) / (1000 * 60));
+
+    const jam = Math.floor(durasiMs / (1000 * 60 * 60));
+    const menit = Math.floor((durasiMs % (1000 * 60 * 60)) / (1000 * 60));
 
     return NextResponse.json({
       success: true,
       type: "CLOCK_OUT",
-      message: "Absen pulang berhasil dicatat.",
-      durasi: `${durasiJam} jam ${durasiMenit} menit`,
+      message: "Absen pulang berhasil",
+      durasi: `${jam} jam ${menit} menit`,
       data: {
-        user: {
-          name: qr.user.name,
-          email: qr.user.email,
-          position: qr.user.position,
-        },
+        user: qr.user,
         attendance: {
           id: updated.id,
           clockIn: todayAttendance.clockIn?.toISOString() ?? null,
@@ -194,12 +193,12 @@ export async function GET(req: NextRequest) {
       },
     });
   } catch (error) {
-    console.error("Error /api/v1/attendance/verify-qr:", error);
+    console.error("VERIFY QR ERROR:", error);
+
     return NextResponse.json(
       {
         success: false,
-        message: "Terjadi kesalahan server. Coba lagi.",
-        details: (error as Error).message,
+        message: "Terjadi kesalahan server.",
       },
       { status: 500 }
     );

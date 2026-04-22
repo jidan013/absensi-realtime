@@ -3,7 +3,7 @@ import type { NextRequest } from "next/server";
 import { isTokenExpiredRuntimeEdge } from "./lib/auth-edge";
 
 // ✅ tambahkan verify sebagai public
-const publicPaths = ["/login", "/register", "/absensi/verify"];
+const publicPaths = ["/login", "/register", "/verify"];
 
 export const middleware = (request: NextRequest) => {
   const { pathname } = request.nextUrl;
