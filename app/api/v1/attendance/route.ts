@@ -17,13 +17,12 @@ export async function POST(req: NextRequest) {
 
     const formData = await req.formData();
 
-    const latStr = formData.get("lat") as string | null;
-    const lonStr = formData.get("lon") as string | null;
+    const latStr      = formData.get("lat")       as string | null;
+    const lonStr      = formData.get("lon")       as string | null;
     const timestampStr = formData.get("timestamp") as string | null;
-    const photoFile = formData.get("photo") as File | null;
+    const photoFile   = formData.get("photo")     as File   | null;
 
-    const qrCodeFromClient = formData.get("qrCode") as string | null;
-
+    // ── Foto wajib untuk face mode ───────────────────────────────
     if (!photoFile) {
       return NextResponse.json(
         { error: "Foto wajib diunggah" },
@@ -31,42 +30,78 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    if (!qrCodeFromClient) {
-      return NextResponse.json(
-        { error: "QR Code wajib dikirim" },
-        { status: 400 }
-      );
-    }
+    // ── Cek sudah absen hari ini ─────────────────────────────────
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+    const todayEnd = new Date();
+    todayEnd.setHours(23, 59, 59, 999);
 
-    // ── VALIDASI QR ─────────────────────────────
-    const qr = await db.qRCode.findFirst({
+    const todayAttendance = await db.attendance.findFirst({
       where: {
-        code: qrCodeFromClient,
-        isUsed: false,
-        expiredAt: { gt: new Date() },
+        userId: userAccess.userId,
+        clockIn: { gte: todayStart, lte: todayEnd },
       },
     });
 
-    if (!qr) {
+    if (todayAttendance) {
       return NextResponse.json(
-        { error: "QR tidak valid atau sudah expired" },
+        { error: "Anda sudah absen masuk hari ini." },
         { status: 400 }
       );
     }
 
-    // ── UPLOAD FOTO ─────────────────────────────
+    // ── Cari QR aktif milik user (reuse jika masih valid) ────────
+    const now = new Date();
+    const prefix = "ABSEN-IN-";
+
+    let qr = await db.qRCode.findFirst({
+      where: {
+        userId: userAccess.userId,
+        code: { startsWith: prefix },
+        expiredAt: { gt: now },
+        isUsed: false,
+      },
+      orderBy: { createdAt: "desc" },
+    });
+
+    // ── Tidak ada QR aktif → buat baru khusus face mode ──────────
+    if (!qr) {
+      const dateStr    = now.toISOString().slice(0, 10).replace(/-/g, "");
+      const randomPart = crypto.randomUUID().slice(0, 8).toUpperCase();
+      const code       = `${prefix}${dateStr}-${userAccess.userId}-${randomPart}-FACE`;
+      const expiredAt  = new Date(now.getTime() + 5 * 60 * 1000); // 5 menit cukup
+
+      // @@unique([userId, date]) di schema → pakai upsert aman
+      try {
+        qr = await db.qRCode.create({
+          data: {
+            userId:    userAccess.userId,
+            code,
+            date:      now,
+            expiredAt,
+            isUsed:    false,
+          },
+        });
+      } catch {
+        // Jika unique constraint error (sudah ada QR hari ini),
+        // ambil yang ada meskipun expired → kita tetap lanjut tanpa qrId
+        qr = null;
+      }
+    }
+
+    // ── Upload foto ke Cloudinary ─────────────────────────────────
     const buffer = Buffer.from(await photoFile.arrayBuffer());
 
     const uploadResult = await new Promise<UploadApiResponse>((resolve, reject) => {
       cloudinary.uploader
         .upload_stream(
           {
-            folder: "absensi",
+            folder:    "absensi",
             public_id: `absensi_${Date.now()}_${userAccess.userId}`,
           },
           (err, result) => {
-            if (err) return reject(err);
-            if (!result) return reject(new Error("Upload gagal"));
+            if (err)      return reject(err);
+            if (!result)  return reject(new Error("Upload gagal"));
             resolve(result);
           }
         )
@@ -75,56 +110,56 @@ export async function POST(req: NextRequest) {
 
     const photoUrl = uploadResult.secure_url;
 
-    // ── LOCATION ─────────────────────────────
+    // ── Simpan lokasi ─────────────────────────────────────────────
     let locationId: string | null = null;
 
     if (latStr && lonStr) {
       const location = await db.location.create({
         data: {
-          latitude: parseFloat(latStr),
+          latitude:  parseFloat(latStr),
           longitude: parseFloat(lonStr),
-          address: null,
+          address:   null,
         },
       });
-
       locationId = location.id;
     }
 
-    // ── CREATE ATTENDANCE ─────────────────────
+    // ── Buat attendance ───────────────────────────────────────────
     const attendance = await db.attendance.create({
       data: {
-        userId: userAccess.userId,
-        qrId: qr.id,
-        clockIn: timestampStr
-          ? new Date(Number(timestampStr))
-          : new Date(),
+        userId:     userAccess.userId,
+        qrId:       qr?.id ?? null,   // null jika QR tidak bisa dibuat (aman, field opsional)
+        clockIn:    timestampStr ? new Date(Number(timestampStr)) : now,
         photoUrl,
         locationId,
       },
     });
 
-    // ── MARK QR USED (INI PENTING) ────────────
-    await db.qRCode.update({
-      where: { id: qr.id },
-      data: { isUsed: true },
-    });
+    // ── Tandai QR sudah digunakan ─────────────────────────────────
+    if (qr) {
+      await db.qRCode.update({
+        where: { id: qr.id },
+        data:  { isUsed: true },
+      });
+    }
 
     return NextResponse.json({
       success: true,
       data: {
-        id: attendance.id,
-        qrCode: qr.code,
-        name: userAccess.name,
+        id:       attendance.id,
+        qrCode:   qr?.code ?? null,
+        name:     userAccess.name,
         timestamp: Date.now(),
         photoUrl,
       },
       message: "Absensi berhasil",
     });
+
   } catch (error) {
     console.error("Error /attendance:", error);
     return NextResponse.json(
       {
-        error: "Gagal menyimpan absensi",
+        error:   "Gagal menyimpan absensi",
         details: (error as Error).message,
       },
       { status: 500 }

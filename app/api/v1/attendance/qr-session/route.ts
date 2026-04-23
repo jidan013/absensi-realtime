@@ -46,7 +46,7 @@ export async function POST(req: NextRequest) {
 
     const prefix = qrType === "CLOCK_IN" ? "ABSEN-IN-" : "ABSEN-OUT-";
 
-    // ── 🔥 FIX UTAMA: REUSE QR AKTIF ──
+    // ── reuse QR aktif jika masih ada ──
     const existingQR = await db.qRCode.findFirst({
       where: {
         userId: userAccess.userId,
@@ -54,9 +54,7 @@ export async function POST(req: NextRequest) {
         expiredAt: { gt: new Date() },
         isUsed: false,
       },
-      orderBy: {
-        createdAt: "desc",
-      },
+      orderBy: { createdAt: "desc" },
     });
 
     if (existingQR) {
@@ -69,14 +67,12 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    // ── buat QR baru hanya jika tidak ada ──
+    // ── buat QR baru ──
     const now = new Date();
     const dateStr = now.toISOString().slice(0, 10).replace(/-/g, "");
     const randomPart = crypto.randomUUID().slice(0, 8).toUpperCase();
-
     const sessionToken = `${prefix}${dateStr}-${userAccess.userId}-${randomPart}`;
-
-    const expiredAt = new Date(Date.now() + 60 * 1000); // 60 detik
+    const expiredAt = new Date(Date.now() + 60 * 1000);
 
     const qrCode = await db.qRCode.create({
       data: {
@@ -88,14 +84,9 @@ export async function POST(req: NextRequest) {
       },
     });
 
-    // ── optional location ──
     if (lat != null && lon != null) {
       await db.location.create({
-        data: {
-          latitude: lat,
-          longitude: lon,
-          address: null,
-        },
+        data: { latitude: lat, longitude: lon, address: null },
       });
     }
 
@@ -105,9 +96,7 @@ export async function POST(req: NextRequest) {
       type: qrType,
       expiredAt: qrCode.expiredAt.toISOString(),
       message:
-        qrType === "CLOCK_IN"
-          ? "QR absen masuk dibuat"
-          : "QR absen pulang dibuat",
+        qrType === "CLOCK_IN" ? "QR absen masuk dibuat" : "QR absen pulang dibuat",
     });
   } catch (error) {
     console.error("QR SESSION ERROR:", error);

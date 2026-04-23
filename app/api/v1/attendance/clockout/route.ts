@@ -1,6 +1,8 @@
 import db from "@/lib/db";
 import { NextRequest, NextResponse } from "next/server";
 
+const SESSION_COOKIE = "absensi_session";
+
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
@@ -27,7 +29,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // ✅ update minimal dulu (anti crash)
+    // ✅ update clockOut
     const updated = await db.attendance.update({
       where: { id: attendanceId },
       data: {
@@ -35,11 +37,13 @@ export async function POST(req: NextRequest) {
       },
     });
 
-    return NextResponse.json({ success: true, data: updated });
+    // ✅ Hapus cookie session → semua device kembali ke form absen
+    const res = NextResponse.json({ success: true, data: updated });
+    res.cookies.delete(SESSION_COOKIE);
 
+    return res;
   } catch (error) {
     console.error("ERROR CLOCKOUT:", error);
-
     return NextResponse.json(
       {
         error: "Gagal clockout",
