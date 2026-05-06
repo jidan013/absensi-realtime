@@ -25,10 +25,49 @@ interface AttendanceData {
   success: boolean;
   checkedIn?: boolean;
   alreadyDone?: boolean;
+  hasAttendance?: boolean;
   attendanceId?: string;
   name?: string;
   clockIn?: string;
   clockOut?: string;
+  durationText?: string;
+}
+
+interface BroadcastData {
+  type: string;
+  timestamp: number;
+  attendanceId?: string;
+  durationText?: string;
+  action?: string;
+}
+
+interface FaceResponse {
+  success: boolean;
+  type: "CLOCK_IN" | "CLOCK_OUT";
+  attendanceId?: string;
+  name?: string;
+  clockIn?: string;
+  durasi?: string;
+  durationText?: string;
+  error?: string;
+}
+
+interface ScanResponse {
+  success: boolean;
+  error?: string;
+  alreadyCheckedIn?: boolean;
+  attendanceId?: string;
+  name?: string;
+  clockIn?: string;
+  message?: string;
+}
+
+interface ClockOutResponse {
+  success: boolean;
+  error?: string;
+  data?: {
+    durationText?: string;
+  };
   durationText?: string;
 }
 
@@ -49,16 +88,34 @@ function getSessionFromCookie(): SessionCookie | null {
   const match = document.cookie.match(/absensi_session=([^;]+)/);
   if (!match) return null;
   try {
-    return JSON.parse(decodeURIComponent(match[1]));
+    return JSON.parse(decodeURIComponent(match[1])) as SessionCookie;
   } catch {
     return null;
   }
 }
 
 // Hapus cookie
-function deleteSessionCookie() {
+function deleteSessionCookie(): void {
   if (typeof document === "undefined") return;
   document.cookie = "absensi_session=; path=/; max-age=0";
+}
+
+// Broadcast ke tab/device lain
+function broadcastSync(type: string, data?: Omit<BroadcastData, 'type' | 'timestamp'>): void {
+  if (typeof window === "undefined") return;
+  
+  const broadcastData: BroadcastData = { type, timestamp: Date.now(), ...data };
+  
+  // BroadcastChannel untuk cross-tab communication
+  if ("BroadcastChannel" in window) {
+    const channel = new BroadcastChannel("attendance-sync");
+    channel.postMessage(broadcastData);
+    channel.close();
+  }
+  
+  // Storage event sebagai fallback
+  localStorage.setItem("attendance_sync", JSON.stringify(broadcastData));
+  setTimeout(() => localStorage.removeItem("attendance_sync"), 100);
 }
 
 function LoadingScreen() {
@@ -103,6 +160,7 @@ function VerifyQRContent() {
   
   // Refs untuk cleanup
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
+  const pollingRef = useRef<NodeJS.Timeout | null>(null);
 
   // ── TIMER ──
   useEffect(() => {
@@ -133,6 +191,118 @@ function VerifyQRContent() {
     return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(sec).padStart(2, "0")}`;
   })();
 
+  // ── SYNC FUNCTION ──
+  const syncWithServer = useCallback(async () => {
+    try {
+      const res = await fetch("/api/v1/attendance/me", {
+        credentials: "include",
+        cache: "no-store",
+      });
+      
+      if (!res.ok) return;
+      
+      const data = await res.json() as AttendanceData;
+      const localSession = getSessionFromCookie();
+      
+      // CASE 1: Server sudah clock out (selesai)
+      if (data.alreadyDone === true || (data.checkedIn === false && data.hasAttendance === true)) {
+        if (localSession || session) {
+          console.log("🔄 Syncing: Server indicates clocked out");
+          deleteSessionCookie();
+          setSession(null);
+          setStatus("success-out");
+          setCheckoutDuration(data.durationText || "Selesai");
+        }
+        return;
+      }
+      
+      // CASE 2: Server tidak punya attendance aktif
+      if (!data.hasAttendance && !data.checkedIn) {
+        if (localSession || session) {
+          console.log("🔄 Syncing: Server has no active session");
+          deleteSessionCookie();
+          setSession(null);
+          setStatus("ready");
+        }
+        return;
+      }
+      
+      // CASE 3: Server memiliki session aktif
+      if (data.checkedIn && data.clockIn && data.attendanceId) {
+        if (!session || session.attendanceId !== data.attendanceId) {
+          console.log("🔄 Syncing: Updating session from server");
+          setSession({
+            attendanceId: data.attendanceId,
+            name: data.name ?? "User",
+            clockIn: data.clockIn,
+          });
+          setStatus("already-in");
+        }
+      }
+    } catch (error) {
+      console.error("Sync error:", error);
+    }
+  }, [session]);
+
+  // ── POLLING & BROADCAST LISTENER ──
+  useEffect(() => {
+    if (!code) return;
+
+    // Initial sync
+    syncWithServer();
+
+    // Polling setiap 3 detik
+    pollingRef.current = setInterval(syncWithServer, 3000);
+
+    // Broadcast channel listener
+    let broadcastChannel: BroadcastChannel | null = null;
+    if (typeof window !== "undefined" && "BroadcastChannel" in window) {
+      broadcastChannel = new BroadcastChannel("attendance-sync");
+      broadcastChannel.onmessage = (event: MessageEvent<BroadcastData>) => {
+        console.log("📡 Broadcast received:", event.data);
+        if (event.data.type === "CLOCK_OUT" || event.data.type === "SESSION_CHANGED") {
+          deleteSessionCookie();
+          setSession(null);
+          setStatus("success-out");
+          syncWithServer();
+        }
+      };
+    }
+
+    // Storage event listener (fallback)
+    const handleStorageChange = (e: StorageEvent): void => {
+      if (e.key === "attendance_sync" && e.newValue) {
+        try {
+          const data = JSON.parse(e.newValue) as BroadcastData;
+          if (data.type === "CLOCK_OUT") {
+            console.log("🔄 Storage event: Clock out detected");
+            deleteSessionCookie();
+            setSession(null);
+            setStatus("success-out");
+            syncWithServer();
+          }
+        } catch (error) {
+          console.error("Failed to parse storage event:", error);
+        }
+      }
+    };
+    window.addEventListener("storage", handleStorageChange);
+
+    // Custom event listener
+    const handleCustomSync = (): void => {
+      console.log("🔄 Custom sync event received");
+      syncWithServer();
+    };
+    window.addEventListener("attendance-sync", handleCustomSync);
+
+    return () => {
+      if (pollingRef.current) clearInterval(pollingRef.current);
+      if (broadcastChannel) broadcastChannel.close();
+      window.removeEventListener("storage", handleStorageChange);
+      window.removeEventListener("attendance-sync", handleCustomSync);
+    };
+  }, [code, syncWithServer]);
+
   // ── INIT ──
   useEffect(() => {
     if (!code) {
@@ -150,44 +320,9 @@ function VerifyQRContent() {
         clockIn: new Date(local.checkInTime).toISOString(),
       });
       setStatus("already-in");
+    } else {
+      setStatus("ready");
     }
-
-    // Validasi ke server
-    const sync = async () => {
-      try {
-        const res = await fetch("/api/v1/attendance/me", {
-          credentials: "include",
-        });
-        
-        if (res.ok) {
-          const data: AttendanceData = await res.json();
-          
-          if (data.checkedIn && data.clockIn && data.attendanceId) {
-            setSession({
-              attendanceId: data.attendanceId,
-              name: data.name ?? "User",
-              clockIn: data.clockIn,
-            });
-            setStatus("already-in");
-          } else if (data.alreadyDone) {
-            setCheckoutDuration(data.durationText || "Selesai");
-            setStatus("success-out");
-            deleteSessionCookie();
-          } else if (!local) {
-            setStatus("ready");
-          }
-        } else if (!local) {
-          setStatus("ready");
-        }
-      } catch (error) {
-        console.error("Sync error:", error);
-        if (!local) {
-          setStatus("ready");
-        }
-      }
-    };
-    
-    void sync();
   }, [code]);
 
   // ── CLOCK IN with QR ──
@@ -214,51 +349,46 @@ function VerifyQRContent() {
       clearTimeout(timeoutId);
 
       setLoadingStep("Memproses response...");
-      const data = await res.json();
+      const data = await res.json() as ScanResponse;
       console.log("📦 Response:", data);
 
-      // Handle error response
       if (data.error) {
         setStatus("error");
         setMessage(data.error);
         return;
       }
 
-      // Handle sudah absen
       if (data.alreadyCheckedIn) {
         setSession({
-          attendanceId: data.attendanceId,
-          name: data.name,
-          clockIn: data.clockIn,
+          attendanceId: data.attendanceId!,
+          name: data.name!,
+          clockIn: data.clockIn!,
         });
         setStatus("already-in");
         return;
       }
 
-      // Handle success
       if (data.success) {
         setLoadingStep("Menyimpan session...");
         
-        // Simpan cookie
-        try {
-          await fetch("/api/v1/attendance/session", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              attendanceId: data.attendanceId,
-              name: data.name,
-            }),
-          });
-        } catch (cookieError) {
-          console.warn("Cookie error:", cookieError);
-        }
+        await fetch("/api/v1/attendance/session", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            attendanceId: data.attendanceId,
+            name: data.name,
+          }),
+        });
 
         setSession({
-          attendanceId: data.attendanceId,
-          name: data.name,
+          attendanceId: data.attendanceId!,
+          name: data.name!,
           clockIn: data.clockIn || new Date().toISOString(),
         });
         setStatus("success-in");
+        
+        // Broadcast ke device lain
+        broadcastSync("SESSION_CHANGED", { attendanceId: data.attendanceId, action: "CLOCK_IN" });
       } else {
         throw new Error(data.message || "Gagal absen");
       }
@@ -285,7 +415,6 @@ function VerifyQRContent() {
     try {
       const now = Date.now();
       
-      // Dapatkan lokasi (optional)
       let lat = null, lon = null;
       try {
         const position = await Promise.race([
@@ -320,7 +449,7 @@ function VerifyQRContent() {
       
       clearTimeout(timeoutId);
 
-      const data = await res.json();
+      const data = await res.json() as ClockOutResponse;
 
       if (!res.ok || !data.success) {
         setStatus("error");
@@ -328,14 +457,15 @@ function VerifyQRContent() {
         return;
       }
 
-      // Hapus session lokal
       const durationText = data.data?.durationText || data.durationText || "Berhasil";
       setCheckoutDuration(durationText);
       setSession(null);
       setStatus("success-out");
       
-      // Hapus cookie dari browser
       deleteSessionCookie();
+      
+      // Broadcast ke semua device lain bahwa sudah clock out
+      broadcastSync("CLOCK_OUT", { attendanceId: session.attendanceId, durationText });
       
     } catch (error) {
       console.error("Clock out error:", error);
@@ -352,7 +482,7 @@ function VerifyQRContent() {
   }, [session, isSubmitting]);
 
   // ── FACE RECOGNITION HANDLER ──
-  const handleFaceCapture = async (photoBase64: string) => {
+  const handleFaceCapture = async (photoBase64: string): Promise<void> => {
     setIsSubmitting(true);
     setLoadingStep("Memproses face recognition...");
     
@@ -391,7 +521,7 @@ function VerifyQRContent() {
       
       clearTimeout(timeoutId);
 
-      const data = await response.json();
+      const data = await response.json() as FaceResponse;
 
       if (!response.ok || data.error) {
         setStatus("error");
@@ -411,16 +541,18 @@ function VerifyQRContent() {
         });
 
         setSession({
-          attendanceId: data.attendanceId,
-          name: data.name,
-          clockIn: data.clockIn,
+          attendanceId: data.attendanceId!,
+          name: data.name!,
+          clockIn: data.clockIn!,
         });
         setStatus("success-in");
+        broadcastSync("SESSION_CHANGED", { attendanceId: data.attendanceId, action: "CLOCK_IN" });
       } else {
         setCheckoutDuration(data.durasi || data.durationText || "Berhasil");
         setSession(null);
         setStatus("success-out");
         deleteSessionCookie();
+        broadcastSync("CLOCK_OUT", { attendanceId: data.attendanceId });
       }
       
       setShowFaceModal(false);
@@ -443,7 +575,6 @@ function VerifyQRContent() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 py-12 px-4">
       <div className="max-w-md mx-auto">
-        {/* Header */}
         <div className="text-center mb-8">
           <h1 className="text-3xl font-bold text-gray-800 mb-2">
             Sistem Absensi
@@ -451,7 +582,6 @@ function VerifyQRContent() {
           <p className="text-gray-600">Scan QR atau Gunakan Face Recognition</p>
         </div>
 
-        {/* Loading Step Indicator */}
         {isSubmitting && loadingStep && (
           <div className="mb-4 p-3 bg-blue-100 rounded-lg text-center">
             <p className="text-blue-800 text-sm">{loadingStep}</p>
@@ -459,7 +589,6 @@ function VerifyQRContent() {
           </div>
         )}
 
-        {/* Main Card */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -468,13 +597,7 @@ function VerifyQRContent() {
           <div className="p-6">
             <AnimatePresence mode="wait">
               {status === "ready" && (
-                <motion.div
-                  key="ready"
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  exit={{ opacity: 0 }}
-                  className="space-y-4"
-                >
+                <motion.div key="ready" className="space-y-4">
                   <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
                     <p className="text-blue-800 text-sm text-center">
                       📍 Silakan pilih metode absen masuk
@@ -505,13 +628,7 @@ function VerifyQRContent() {
               )}
 
               {(status === "already-in" || status === "success-in") && session && (
-                <motion.div
-                  key="checked-in"
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  exit={{ opacity: 0 }}
-                  className="space-y-4"
-                >
+                <motion.div key="checked-in" className="space-y-4">
                   <div className="bg-green-50 border border-green-200 rounded-lg p-4 text-center">
                     <div className="text-4xl mb-2">✅</div>
                     <p className="text-green-800 font-semibold">
@@ -553,13 +670,7 @@ function VerifyQRContent() {
               )}
 
               {status === "success-out" && (
-                <motion.div
-                  key="checked-out"
-                  initial={{ opacity: 0, scale: 0.9 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  exit={{ opacity: 0 }}
-                  className="space-y-4"
-                >
+                <motion.div key="checked-out" className="space-y-4">
                   <div className="bg-blue-50 border border-blue-200 rounded-lg p-6 text-center">
                     <div className="text-5xl mb-3">🎉</div>
                     <h2 className="text-2xl font-bold text-gray-800 mb-2">
@@ -585,13 +696,7 @@ function VerifyQRContent() {
               )}
 
               {status === "error" && (
-                <motion.div
-                  key="error"
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  exit={{ opacity: 0 }}
-                  className="space-y-4"
-                >
+                <motion.div key="error" className="space-y-4">
                   <div className="bg-red-50 border border-red-200 rounded-lg p-4 text-center">
                     <div className="text-4xl mb-2">⚠️</div>
                     <p className="text-red-800 font-semibold">Terjadi Kesalahan</p>
@@ -626,7 +731,7 @@ function VerifyQRContent() {
       <FaceRecognition
         isOpen={showFaceModal}
         onCapture={handleFaceCapture}
-        onError={(error) => {
+        onError={(error: string) => {
           setMessage(error);
           setStatus("error");
         }}

@@ -4,6 +4,7 @@ import "./globals.css";
 import { DarkModeProvider } from "@/components/home/dark-mode";
 import Navbar from "@/components/home/home-navbar";
 import Providers from "@/providers/providers";
+import { SyncManager } from "@/components/SyncManager";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -32,6 +33,7 @@ export default function RootLayout({
         suppressHydrationWarning>
         <DarkModeProvider>
           <Providers>
+            <SyncManager />
             <main>
               <Navbar />
               {children}
