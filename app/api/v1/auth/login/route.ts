@@ -43,20 +43,21 @@ export async function POST(req: NextRequest) {
       lastLogin: user.updatedAt.toISOString(),
     });
 
-    const response = NextResponse.json(
-      {
-        message: "Login berhasil",
-        user: {
-          userId: user.id,
-          name: user.name,
-          email: user.email,
-          role: user.role,
-          createdAt: user.createdAt.toISOString(),
-          lastLogin: user.updatedAt.toISOString(),
-        },
-      },
-      { status: 200 }
-    );
+   
+const response = NextResponse.json(
+  {
+    success: true,
+    message: "Login berhasil",
+    data: {
+      userId: user.id,
+      name: user.name,
+      email: user.email,
+      role: user.role,
+      position: user.position,
+    },
+  },
+  { status: 200 }
+);
 
     // ✅ FIX: sameSite konsisten dengan lib/auth.ts
     // "none" + secure di production agar cookie ikut saat scan QR dari HP
@@ -79,4 +80,6 @@ export async function POST(req: NextRequest) {
     console.error("LOGIN ERROR:", error);
     return NextResponse.json({ message: "Internal server error" }, { status: 500 });
   }
+
+  
 }
