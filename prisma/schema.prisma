@@ -64,6 +64,7 @@ model Attendance {
   clockOut DateTime?
 
   photoUrl   String?
+  photoUrlOut String?
   locationId String?
 
   createdAt DateTime @default(now())

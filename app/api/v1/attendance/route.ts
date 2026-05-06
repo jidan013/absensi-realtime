@@ -185,7 +185,7 @@ export async function POST(req: NextRequest) {
       where: { id: todayAttendance!.id },
       data: {
         clockOut:     now,
-        photoUrlOut:  photoUrl, // simpan foto pulang (tambahkan kolom ini di schema jika belum ada)
+        photoUrlOut:  photoUrl, 
         locationId:   locationId ?? todayAttendance!.locationId,
       },
     });
