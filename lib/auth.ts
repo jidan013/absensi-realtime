@@ -14,11 +14,47 @@ if (!JWT_SECRET) {
 }
 
 /**
+ * 🍪 SET AUTH COOKIE — fix untuk mobile browser
+ * Dipanggil di route login setelah generate token.
+ *
+ * Kenapa ini penting di HP:
+ *  - sameSite: "lax"  → cookie ikut dikirim saat user buka link QR dari kamera
+ *  - secure: true     → wajib jika domain HTTPS (Vercel, dsb)
+ *  - httpOnly: true   → tidak bisa dibaca JS, lebih aman
+ *  - maxAge: 7 hari   → tidak perlu login ulang tiap hari
+ */
+export const setAuthCookie = async (token: string) => {
+  const cookieStore = await cookies();
+  cookieStore.set("access_token", token, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",   // ← kunci agar cookie ikut saat redirect dari QR scan
+    path: "/",
+    maxAge: 60 * 60 * 24 * 7, // 7 hari
+  });
+};
+
+/**
+ * 🗑️ CLEAR AUTH COOKIE — dipanggil saat logout
+ */
+export const clearAuthCookie = async () => {
+  const cookieStore = await cookies();
+  cookieStore.set("access_token", "", {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
+    path: "/",
+    maxAge: 0,
+  });
+};
+
+/**
  * 🔐 GENERATE TOKEN
  */
 export const generateToken = (payload: UserAuth): string => {
   return jwt.sign(payload, JWT_SECRET, {
     algorithm: "HS256",
+    expiresIn: "7d",
   });
 };
 
@@ -37,32 +73,24 @@ export const verifyToken = (token: string): UserAuth | null => {
 };
 
 /**
- * 🧠 GET CURRENT USER (🔥 FIX UTAMA DI SINI)
+ * 🧠 GET CURRENT USER
  */
 export const getCurrentUser = async () => {
   try {
-    // ❗ FIX: cookies() itu synchronous
     const cookieStore = await cookies();
     const token = cookieStore.get("access_token")?.value;
-
-    console.log("🍪 TOKEN:", token);
 
     if (!token) return null;
 
     const payload = verifyToken(token);
-
-    console.log("📦 PAYLOAD:", payload);
-
     if (!payload) return null;
 
-    // 🔥 FIX: cek expired
     const now = Math.floor(Date.now() / 1000);
     if (payload.exp < now) {
       console.log("⛔ Token expired");
       return null;
     }
 
-    // 🔍 Ambil user dari DB
     const user = await db.user.findUnique({
       where: { id: payload.userId },
     });
@@ -105,17 +133,13 @@ export const getCurrentUser = async () => {
  */
 export const requireAuth = async () => {
   const user = await getCurrentUser();
-  if (!user) {
-    throw new Error("Unauthorized");
-  }
+  if (!user) throw new Error("Unauthorized");
   return user;
 };
 
 export const requireRole = async (allowedRoles: string[]) => {
   const user = await requireAuth();
-  if (!allowedRoles.includes(user.role)) {
-    throw new Error("Forbidden");
-  }
+  if (!allowedRoles.includes(user.role)) throw new Error("Forbidden");
   return user;
 };
 
@@ -124,34 +148,15 @@ export const requireRole = async (allowedRoles: string[]) => {
  */
 export const requireAuthOrNull = async () => {
   const user = await getCurrentUser();
-
-  if (!user) {
-    return NextResponse.json(
-      { error: "Unauthorized" },
-      { status: 401 }
-    );
-  }
-
+  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   return user;
 };
 
 export const requireRoleOrNull = async (allowedRoles: string[]) => {
   const user = await getCurrentUser();
-
-  if (!user) {
-    return NextResponse.json(
-      { error: "Unauthorized" },
-      { status: 401 }
-    );
-  }
-
-  if (!allowedRoles.includes(user.role)) {
-    return NextResponse.json(
-      { error: "Forbidden" },
-      { status: 403 }
-    );
-  }
-
+  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!allowedRoles.includes(user.role))
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   return user;
 };
 
@@ -164,7 +169,7 @@ export const hashPassword = async (password: string): Promise<string> => {
 
 export const verifyPassword = async (
   password: string,
-  hashedPassword: string,
+  hashedPassword: string
 ): Promise<boolean> => {
   return bcrypt.compare(password, hashedPassword);
 };
