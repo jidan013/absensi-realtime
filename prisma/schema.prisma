@@ -60,7 +60,7 @@ model Attendance {
   userId String
   qrId   String?
 
-  clockIn  DateTime?
+  clockIn  DateTime? @default(now())
   clockOut DateTime?
 
   photoUrl   String?

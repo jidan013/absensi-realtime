@@ -7,14 +7,14 @@ export async function GET(req: NextRequest) {
     const userAccess = await requireAuth();
     if (userAccess instanceof NextResponse) return userAccess;
 
-    // ── Ambil batas hari ini ─────────────────────────────
+    // ── Range hari ini ─────────────────────────────────
     const todayStart = new Date();
     todayStart.setHours(0, 0, 0, 0);
 
     const todayEnd = new Date();
     todayEnd.setHours(23, 59, 59, 999);
 
-    // ── Cari attendance terakhir hari ini ────────────────
+    // ── Cari attendance hari ini ───────────────────────
     const attendance = await db.attendance.findFirst({
       where: {
         userId: userAccess.userId,
@@ -23,42 +23,46 @@ export async function GET(req: NextRequest) {
           lte: todayEnd,
         },
       },
-      orderBy: {
-        clockIn: "desc",
-      },
-      include: {
-        location: true,
-      },
+      orderBy: { clockIn: "desc" },
     });
 
-    // ── Kalau belum absen ────────────────────────────────
+    // ── BELUM ABSEN ────────────────────────────────────
     if (!attendance) {
       return NextResponse.json({
         checkedIn: false,
+        alreadyDone: false,
         message: "Belum melakukan absensi hari ini",
       });
     }
 
-    // ── Sudah absen ──────────────────────────────────────
+    // ── SUDAH CLOCK-OUT ────────────────────────────────
+    if (attendance.clockOut) {
+      return NextResponse.json({
+        checkedIn: false,
+        alreadyDone: true,
+        attendanceId: attendance.id,
+        clockIn: attendance.clockIn,
+        clockOut: attendance.clockOut,
+        message: "Anda sudah absen masuk & pulang hari ini",
+      });
+    }
+
+    // ── MASIH AKTIF (SUDAH CLOCK-IN) ───────────────────
     return NextResponse.json({
       checkedIn: true,
+      alreadyDone: false,
       attendanceId: attendance.id,
       clockIn: attendance.clockIn,
-      clockOut: attendance.clockOut ?? null,
-      photoUrl: attendance.photoUrl,
-      location: attendance.location
-        ? {
-            lat: attendance.location.latitude,
-            lon: attendance.location.longitude,
-          }
-        : null,
+      clockOut: null,
     });
+
   } catch (error) {
     console.error("ERROR /attendance/me:", error);
 
     return NextResponse.json(
       {
         checkedIn: false,
+        alreadyDone: false,
         error: "Gagal mengambil status absensi",
       },
       { status: 500 }

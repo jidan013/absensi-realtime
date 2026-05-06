@@ -1,11 +1,3 @@
-/**
- * /api/v1/attendance/session
- *
- * GET    → Baca session aktif dari cookie HttpOnly "absensi_session"
- * POST   → Simpan session baru ke cookie (dipanggil setelah clock-in berhasil)
- * DELETE → Hapus cookie (opsional, clockout sudah hapus otomatis)
- */
-
 import { NextRequest, NextResponse } from "next/server";
 
 const COOKIE_NAME = "absensi_session";
@@ -28,12 +20,21 @@ export async function GET(req: NextRequest) {
   try {
     const session = JSON.parse(cookie.value) as CheckInSession;
 
+    // validasi basic
     if (
       !session.attendanceId ||
-      session.attendanceId.startsWith("local-") ||
-      typeof session.checkInTime !== "number" ||
-      session.checkInTime <= 0
+      typeof session.checkInTime !== "number"
     ) {
+      const res = NextResponse.json({ active: false });
+      res.cookies.delete(COOKIE_NAME);
+      return res;
+    }
+
+    // ⛔ auto expire (optional tapi bagus)
+    const now = Date.now();
+    const isExpired = now - session.checkInTime > COOKIE_MAX_AGE * 1000;
+
+    if (isExpired) {
       const res = NextResponse.json({ active: false });
       res.cookies.delete(COOKIE_NAME);
       return res;
@@ -47,12 +48,12 @@ export async function GET(req: NextRequest) {
   }
 }
 
-// ── POST ──────────────────────────────────────────────────────────
+// ── POST (SET SESSION setelah scan) ───────────────────────────────
 export async function POST(req: NextRequest) {
   try {
     const body = (await req.json()) as Partial<CheckInSession>;
 
-    if (!body.attendanceId || typeof body.checkInTime !== "number" || !body.name) {
+    if (!body.attendanceId || !body.name) {
       return NextResponse.json(
         { error: "Data session tidak lengkap" },
         { status: 400 }
@@ -62,14 +63,14 @@ export async function POST(req: NextRequest) {
     const session: CheckInSession = {
       attendanceId: body.attendanceId,
       name: body.name,
-      checkInTime: body.checkInTime,
+      checkInTime: Date.now(), // pakai waktu sekarang
     };
 
-    const res = NextResponse.json({ ok: true });
+    const res = NextResponse.json({ success: true, session });
 
     res.cookies.set(COOKIE_NAME, JSON.stringify(session), {
-      httpOnly: true,
-      sameSite: "strict",
+      httpOnly: false, // ✅ penting: biar frontend bisa baca
+      sameSite: "lax",
       secure: process.env.NODE_ENV === "production",
       path: "/",
       maxAge: COOKIE_MAX_AGE,
@@ -77,13 +78,21 @@ export async function POST(req: NextRequest) {
 
     return res;
   } catch {
-    return NextResponse.json({ error: "Request tidak valid" }, { status: 400 });
+    return NextResponse.json(
+      { error: "Request tidak valid" },
+      { status: 400 }
+    );
   }
 }
 
-// ── DELETE ────────────────────────────────────────────────────────
+// ── DELETE (CLOCK OUT) ────────────────────────────────────────────
 export async function DELETE() {
-  const res = NextResponse.json({ ok: true });
-  res.cookies.delete(COOKIE_NAME);
+  const res = NextResponse.json({ success: true });
+
+  res.cookies.set(COOKIE_NAME, "", {
+    path: "/",
+    maxAge: 0,
+  });
+
   return res;
 }

@@ -5,87 +5,87 @@ import db from "@/lib/db";
 export async function POST(req: NextRequest) {
   try {
     const userAccess = await requireAuth();
+    if (userAccess instanceof NextResponse) return userAccess;
 
-    const body = (await req.json()) as {
-      qrCode: string;
-      lat?: number;
-      lon?: number;
-      accuracy?: number;
-      timestamp?: number;
-    };
+    const body = await req.json();
 
     const { qrCode, lat, lon, timestamp } = body;
 
     if (!qrCode || typeof qrCode !== "string") {
-      return NextResponse.json({ error: "QR Code wajib diisi" }, { status: 400 });
+      return NextResponse.json(
+        { error: "QR Code wajib diisi" },
+        { status: 400 }
+      );
     }
 
-    // 1. Cari QR Code di DB
+    // ── Cari QR ────────────────────────────────────────
     const qr = await db.qRCode.findUnique({
       where: { code: qrCode },
-      include: { user: { select: { name: true, email: true } } },
+      include: { user: { select: { name: true } } },
     });
 
     if (!qr) {
-      return NextResponse.json({ error: "QR Code tidak ditemukan" }, { status: 404 });
+      return NextResponse.json(
+        { error: "QR Code tidak ditemukan" },
+        { status: 404 }
+      );
     }
 
-    // 2. QR harus milik user yang scan (self-absen) ATAU bisa milik siapapun
-    // — sesuai kebutuhan sistem: user scan QR milik DIRI SENDIRI
+    // ── Validasi pemilik QR ────────────────────────────
     if (qr.userId !== userAccess.userId) {
       return NextResponse.json(
-        { error: "QR Code bukan milik Anda. Gunakan QR Code Anda sendiri." },
+        { error: "QR Code bukan milik Anda" },
         { status: 403 }
       );
     }
 
-    // 3. Cek expired
+    // ── Expired ───────────────────────────────────────
     if (new Date() > qr.expiredAt) {
       return NextResponse.json(
-        { error: "QR Code sudah kadaluarsa. Silakan buat QR baru." },
+        { error: "QR Code sudah kadaluarsa" },
         { status: 400 }
       );
     }
 
-    // 4. Cek sudah dipakai
-    if (qr.isUsed) {
-      return NextResponse.json(
-        { error: "QR Code sudah pernah digunakan hari ini." },
-        { status: 400 }
-      );
-    }
-
-    // 5. Cek sudah absen hari ini
+    // ── Cek sudah absen hari ini ──────────────────────
     const todayStart = new Date();
     todayStart.setHours(0, 0, 0, 0);
+
     const todayEnd = new Date();
     todayEnd.setHours(23, 59, 59, 999);
 
-    const existingAttendance = await db.attendance.findFirst({
+    const existing = await db.attendance.findFirst({
       where: {
         userId: userAccess.userId,
         clockIn: { gte: todayStart, lte: todayEnd },
       },
     });
 
-    if (existingAttendance) {
-      return NextResponse.json(
-        { error: "Anda sudah absen hari ini." },
-        { status: 400 }
-      );
-    }
+    // ✅ SUDAH ABSEN → kirim data lama (anti error UI)
+    if (existing && existing.clockIn) {
+  return NextResponse.json(
+    {
+      success: false,
+      error: "Anda sudah absen hari ini",
+      attendanceId: existing.id,
+      clockIn: existing.clockIn.toISOString(),
+    },
+    { status: 400 }
+  );
+}
 
-    // 6. Simpan lokasi
+    // ── Simpan lokasi (optional) ──────────────────────
     let locationId: string | null = null;
     if (lat != null && lon != null) {
-      const location = await db.location.create({
-        data: { latitude: lat, longitude: lon, address: null },
+      const loc = await db.location.create({
+        data: { latitude: lat, longitude: lon },
       });
-      locationId = location.id;
+      locationId = loc.id;
     }
 
-    // 7. Buat attendance
+    // ── Create attendance ─────────────────────────────
     const clockInTime = timestamp ? new Date(timestamp) : new Date();
+
     const attendance = await db.attendance.create({
       data: {
         userId: userAccess.userId,
@@ -95,7 +95,7 @@ export async function POST(req: NextRequest) {
       },
     });
 
-    // 8. Tandai QR sudah dipakai
+    // ⚠️ optional: kalau QR mau reusable, HAPUS ini
     await db.qRCode.update({
       where: { id: qr.id },
       data: { isUsed: true },
@@ -106,12 +106,14 @@ export async function POST(req: NextRequest) {
       attendanceId: attendance.id,
       name: qr.user.name,
       clockIn: clockInTime.toISOString(),
-      message: "Absensi berhasil dicatat",
+      message: "Absensi berhasil",
     });
+
   } catch (error) {
-    console.error("Error /api/v1/attendance/scan:", error);
+    console.error("ERROR /attendance/scan:", error);
+
     return NextResponse.json(
-      { error: "Gagal menyimpan absensi", details: (error as Error).message },
+      { error: "Gagal menyimpan absensi" },
       { status: 500 }
     );
   }

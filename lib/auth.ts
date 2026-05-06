@@ -5,44 +5,44 @@ import db from "./db";
 import bcrypt from "bcryptjs";
 import { NextResponse } from "next/server";
 
-/**
- * 🔥 HARD GUARD (WAJIB)
- */
+// ── Hard guard ────────────────────────────────────────────────────
 const JWT_SECRET = process.env.JWT_SECRET;
 if (!JWT_SECRET) {
   throw new Error("❌ JWT_SECRET is not defined in environment variables");
 }
 
+// ── Deteksi production ────────────────────────────────────────────
+const isProd = process.env.NODE_ENV === "production";
+
 /**
- * 🍪 SET AUTH COOKIE — fix untuk mobile browser
- * Dipanggil di route login setelah generate token.
+ * 🍪 SET AUTH COOKIE
  *
- * Kenapa ini penting di HP:
- *  - sameSite: "lax"  → cookie ikut dikirim saat user buka link QR dari kamera
- *  - secure: true     → wajib jika domain HTTPS (Vercel, dsb)
- *  - httpOnly: true   → tidak bisa dibaca JS, lebih aman
- *  - maxAge: 7 hari   → tidak perlu login ulang tiap hari
+ * sameSite "none" + secure di production agar cookie ikut saat:
+ *  - user scan QR dari HP (cross-site request)
+ *  - buka link /verify?code=... dari kamera HP
+ *
+ * sameSite "lax" di development (localhost tidak support "none" tanpa HTTPS)
  */
-export const setAuthCookie = async (token: string) => {
+export const setAuthCookie = async (token: string): Promise<void> => {
   const cookieStore = await cookies();
   cookieStore.set("access_token", token, {
     httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "lax",   // ← kunci agar cookie ikut saat redirect dari QR scan
+    secure: isProd,
+    sameSite: isProd ? "none" : "lax",
     path: "/",
     maxAge: 60 * 60 * 24 * 7, // 7 hari
   });
 };
 
 /**
- * 🗑️ CLEAR AUTH COOKIE — dipanggil saat logout
+ * 🗑️ CLEAR AUTH COOKIE
  */
-export const clearAuthCookie = async () => {
+export const clearAuthCookie = async (): Promise<void> => {
   const cookieStore = await cookies();
   cookieStore.set("access_token", "", {
     httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "lax",
+    secure: isProd,
+    sameSite: isProd ? "none" : "lax",
     path: "/",
     maxAge: 0,
   });
@@ -50,8 +50,13 @@ export const clearAuthCookie = async () => {
 
 /**
  * 🔐 GENERATE TOKEN
+ *
+ * FIX: tidak lagi terima exp/iat dari luar — biarkan jwt.sign yang handle
+ * supaya tidak ada konflik dua exp field di payload.
  */
-export const generateToken = (payload: UserAuth): string => {
+export const generateToken = (
+  payload: Omit<UserAuth, "exp" | "iat">
+): string => {
   return jwt.sign(payload, JWT_SECRET, {
     algorithm: "HS256",
     expiresIn: "7d",
@@ -60,12 +65,20 @@ export const generateToken = (payload: UserAuth): string => {
 
 /**
  * 🔍 VERIFY TOKEN
+ *
+ * FIX: return type eksplisit, tidak cast langsung — pastikan payload ada
+ * sebelum akses field apapun.
  */
 export const verifyToken = (token: string): UserAuth | null => {
   try {
-    return jwt.verify(token, JWT_SECRET, {
+    const decoded = jwt.verify(token, JWT_SECRET, {
       algorithms: ["HS256"],
-    }) as UserAuth;
+    });
+
+    // FIX: pastikan decoded bukan string (edge case jwt.verify)
+    if (!decoded || typeof decoded === "string") return null;
+
+    return decoded as UserAuth;
   } catch (err) {
     console.log("❌ verifyToken error:", err);
     return null;
@@ -74,8 +87,10 @@ export const verifyToken = (token: string): UserAuth | null => {
 
 /**
  * 🧠 GET CURRENT USER
+ *
+ * FIX: cek payload null sebelum akses .exp
  */
-export const getCurrentUser = async () => {
+export const getCurrentUser = async (): Promise<UserAuth | null> => {
   try {
     const cookieStore = await cookies();
     const token = cookieStore.get("access_token")?.value;
@@ -83,10 +98,13 @@ export const getCurrentUser = async () => {
     if (!token) return null;
 
     const payload = verifyToken(token);
+
+    // FIX: null check sebelum akses payload.exp
     if (!payload) return null;
 
+    // Cek expiry manual (defence in depth)
     const now = Math.floor(Date.now() / 1000);
-    if (payload.exp < now) {
+    if (payload.exp && payload.exp < now) {
       console.log("⛔ Token expired");
       return null;
     }
@@ -97,25 +115,11 @@ export const getCurrentUser = async () => {
 
     if (!user) return null;
 
-    let roleId = "";
-    let name = "";
-
-    switch (user.role) {
-      case "ADMIN":
-        roleId = user.id;
-        name = "Administrator";
-        break;
-      case "EMPLOYEE":
-        roleId = user.id;
-        name = user.name || "";
-        break;
-    }
-
     return {
       userId: user.id,
-      roleId,
+      roleId: user.id,
       email: user.email,
-      name,
+      name: user.name ?? "",
       role: user.role,
       createdAt: user.createdAt.toISOString(),
       lastLogin: user.updatedAt.toISOString(),
@@ -129,30 +133,32 @@ export const getCurrentUser = async () => {
 };
 
 /**
- * 🔐 CLIENT GUARD
+ * 🔐 REQUIRE AUTH — throws jika tidak login
  */
-export const requireAuth = async () => {
+export const requireAuth = async (): Promise<UserAuth> => {
   const user = await getCurrentUser();
   if (!user) throw new Error("Unauthorized");
   return user;
 };
 
-export const requireRole = async (allowedRoles: string[]) => {
+export const requireRole = async (allowedRoles: string[]): Promise<UserAuth> => {
   const user = await requireAuth();
   if (!allowedRoles.includes(user.role)) throw new Error("Forbidden");
   return user;
 };
 
 /**
- * 🌐 SERVER GUARD
+ * 🌐 SERVER GUARD — return NextResponse jika tidak login
  */
-export const requireAuthOrNull = async () => {
+export const requireAuthOrNull = async (): Promise<UserAuth | NextResponse> => {
   const user = await getCurrentUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   return user;
 };
 
-export const requireRoleOrNull = async (allowedRoles: string[]) => {
+export const requireRoleOrNull = async (
+  allowedRoles: string[]
+): Promise<UserAuth | NextResponse> => {
   const user = await getCurrentUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   if (!allowedRoles.includes(user.role))
