@@ -37,7 +37,7 @@ export async function GET(req: NextRequest) {
       return response;
     }
 
-    // Get fresh user data from database
+    // Get fresh user data from database (tanpa isActive)
     const user = await db.user.findUnique({
       where: { id: payload.userId },
       select: {
@@ -48,13 +48,13 @@ export async function GET(req: NextRequest) {
         position: true,
         createdAt: true,
         updatedAt: true,
-        isActive: true,
+        // isActive: true, // ❌ Hapus karena tidak ada di schema
       },
     });
 
-    if (!user || user.isActive === false) {
+    if (!user) {
       const response = NextResponse.json(
-        { success: false, error: "User not found or inactive" },
+        { success: false, error: "User not found" },
         { status: 401 }
       );
       response.cookies.delete("access_token");
