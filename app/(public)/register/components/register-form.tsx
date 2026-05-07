@@ -14,6 +14,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Eye, EyeOff, User, Mail, Briefcase, Lock } from "lucide-react";
 
 export default function RegisterForm({
   className,
@@ -30,6 +31,8 @@ export default function RegisterForm({
   });
 
   const [loading, setLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
   const [message, setMessage] = useState<{
     type: "success" | "error" | "";
@@ -43,6 +46,24 @@ export default function RegisterForm({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
+    // Validasi password match
+    if (form.password !== form.confirmPassword) {
+      setMessage({
+        type: "error",
+        text: "Password dan Confirm Password tidak cocok",
+      });
+      return;
+    }
+
+    // Validasi minimal password length
+    if (form.password.length < 6) {
+      setMessage({
+        type: "error",
+        text: "Password minimal 6 karakter",
+      });
+      return;
+    }
+
     setLoading(true);
     setMessage({ type: "", text: "" });
 
@@ -53,14 +74,15 @@ export default function RegisterForm({
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          ...form,
-          role: "EMPLOYEE", // default role
+          name: form.name,
+          email: form.email,
+          position: form.position,
+          password: form.password,
+          role: "EMPLOYEE",
         }),
       });
 
       const data = await res.json();
-
-      console.log(data);
 
       if (!res.ok) {
         setMessage({
@@ -69,7 +91,8 @@ export default function RegisterForm({
             data.message ||
             Object.values(data.errors || {})
               .flat()
-              .join(", "),
+              .join(", ") ||
+            "Registrasi gagal",
         });
         setLoading(false);
         return;
@@ -87,9 +110,9 @@ export default function RegisterForm({
         type: "error",
         text: "Terjadi kesalahan, coba lagi.",
       });
+    } finally {
+      setLoading(false);
     }
-
-    setLoading(false);
   };
 
   return (
@@ -97,17 +120,22 @@ export default function RegisterForm({
       onSubmit={handleSubmit}
       className={cn("flex flex-col gap-6", className)}
       {...props}>
-      <FieldGroup>
-        <div className="flex flex-col items-center gap-1 text-center">
-          <h1 className="text-2xl font-bold">Register</h1>
-          <p className="text-muted-foreground text-sm">
-            Create your new account below
+      <div className="space-y-4">
+        {/* Header */}
+        <div className="text-center">
+          <h1 className="text-2xl font-bold bg-gradient-to-r from-slate-900 to-slate-700 dark:from-white dark:to-slate-300 bg-clip-text text-transparent">
+            Create Account
+          </h1>
+          <p className="text-muted-foreground text-sm mt-1">
+            Fill in your information below
           </p>
         </div>
 
+        {/* Alert */}
         {message.type && (
           <Alert
-            variant={message.type === "success" ? "default" : "destructive"}>
+            variant={message.type === "success" ? "default" : "destructive"}
+            className="rounded-xl">
             <AlertTitle>
               {message.type === "success" ? "Success" : "Error"}
             </AlertTitle>
@@ -115,76 +143,139 @@ export default function RegisterForm({
           </Alert>
         )}
 
-        <Field>
-          <FieldLabel>Name</FieldLabel>
+        {/* Name Field */}
+        <div className="space-y-2">
+          <FieldLabel className="flex items-center gap-2">
+            <User className="w-4 h-4" />
+            Full Name
+          </FieldLabel>
           <Input
             id="name"
-            placeholder="your full name"
+            placeholder="John Doe"
             value={form.name}
             onChange={handleChange}
+            required
+            className="h-11 rounded-xl"
           />
-        </Field>
+        </div>
 
-        <Field>
-          <FieldLabel>Email</FieldLabel>
+        {/* Email Field */}
+        <div className="space-y-2">
+          <FieldLabel className="flex items-center gap-2">
+            <Mail className="w-4 h-4" />
+            Email
+          </FieldLabel>
           <Input
             id="email"
             type="email"
-            placeholder="example@gmail.com"
+            placeholder="john@example.com"
             value={form.email}
             onChange={handleChange}
+            required
+            className="h-11 rounded-xl"
           />
-        </Field>
+        </div>
 
-        <Field>
-          <FieldLabel>Position</FieldLabel>
+        {/* Position Field */}
+        <div className="space-y-2">
+          <FieldLabel className="flex items-center gap-2">
+            <Briefcase className="w-4 h-4" />
+            Position
+          </FieldLabel>
           <Input
             id="position"
-            placeholder="Staff / Manager"
+            placeholder="Staff / Manager / Developer"
             value={form.position}
             onChange={handleChange}
+            required
+            className="h-11 rounded-xl"
           />
-        </Field>
+        </div>
 
-        <Field>
-          <FieldLabel>Password</FieldLabel>
-          <Input
-            id="password"
-            type="password"
-            placeholder="******"
-            value={form.password}
-            onChange={handleChange}
-          />
-        </Field>
+        {/* Password Field */}
+        <div className="space-y-2">
+          <FieldLabel className="flex items-center gap-2">
+            <Lock className="w-4 h-4" />
+            Password
+          </FieldLabel>
+          <div className="relative">
+            <Input
+              id="password"
+              type={showPassword ? "text" : "password"}
+              placeholder="••••••••"
+              value={form.password}
+              onChange={handleChange}
+              required
+              className="h-11 rounded-xl pr-10"
+            />
+            <button
+              type="button"
+              onClick={() => setShowPassword(!showPassword)}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors">
+              {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+            </button>
+          </div>
+        </div>
 
-        <Field>
-          <FieldLabel>Confirm Password</FieldLabel>
-          <Input
-            id="confirmPassword"
-            type="password"
-            placeholder="******"
-            value={form.confirmPassword}
-            onChange={handleChange}
-          />
-        </Field>
+        {/* Confirm Password Field */}
+        <div className="space-y-2">
+          <FieldLabel className="flex items-center gap-2">
+            <Lock className="w-4 h-4" />
+            Confirm Password
+          </FieldLabel>
+          <div className="relative">
+            <Input
+              id="confirmPassword"
+              type={showConfirmPassword ? "text" : "password"}
+              placeholder="••••••••"
+              value={form.confirmPassword}
+              onChange={handleChange}
+              required
+              className="h-11 rounded-xl pr-10"
+            />
+            <button
+              type="button"
+              onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors">
+              {showConfirmPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+            </button>
+          </div>
+        </div>
 
-        <Field>
-          <Button type="submit" disabled={loading}>
-            {loading ? "Loading..." : "Register"}
-          </Button>
-        </Field>
+        {/* Submit Button */}
+        <Button 
+          type="submit" 
+          disabled={loading}
+          className="w-full h-11 rounded-xl bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-700 hover:to-blue-600 text-white font-semibold shadow-lg hover:shadow-xl transition-all duration-300">
+          {loading ? (
+            <div className="flex items-center gap-2">
+              <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+              <span>Creating account...</span>
+            </div>
+          ) : (
+            "Register"
+          )}
+        </Button>
 
-        <FieldSeparator />
+        <div className="relative">
+          <div className="absolute inset-0 flex items-center">
+            <div className="w-full border-t border-slate-200 dark:border-slate-700"></div>
+          </div>
+          <div className="relative flex justify-center text-xs uppercase">
+            <span className="bg-white dark:bg-slate-900 px-2 text-muted-foreground">
+              Already have an account?
+            </span>
+          </div>
+        </div>
 
-        <Field>
-          <FieldDescription className="text-center">
-            Already have an account?{" "}
-            <Link href="/login" className="underline underline-offset-4">
-              Sign In
-            </Link>
-          </FieldDescription>
-        </Field>
-      </FieldGroup>
+        <Button
+          type="button"
+          variant="outline"
+          onClick={() => router.push("/login")}
+          className="w-full h-11 rounded-xl">
+          Sign In
+        </Button>
+      </div>
     </form>
   );
 }

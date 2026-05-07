@@ -48,28 +48,125 @@ import {
   CheckCircle2,
   Loader2,
   XCircle,
+  Eye,
+  User,
+  Smartphone,
+  Laptop,
 } from "lucide-react";
-import { DarkModeContext } from "@/components/home/dark-mode";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Badge } from "@/components/ui/badge";
 
-// ── Tipe data ──────────────────────────────────────────────────────────────────
-export type Payment = {
+// ── Tipe data real ─────────────────────────────────────────────────────────────
+interface AttendanceRecord {
   id: string;
-  /** Waktu absen tetap (dicatat saat karyawan hadir) */
-  checkinTime: string;
-  status: "pending" | "processing" | "success" | "failed";
-  email: string;
-};
+  user: {
+    name: string;
+    email: string;
+    position: string;
+  };
+  clockIn: string | null;
+  clockOut: string | null;
+  method: "QR" | "FACE" | "MANUAL";
+  device: string | null;
+  ipAddress: string | null;
+  location: {
+    latitude: number;
+    longitude: number;
+    address: string | null;
+  } | null;
+  createdAt: string;
+}
 
-// ── Helper: format waktu saat ini ─────────────────────────────────────────────
-const nowString = () =>
-  new Date().toLocaleTimeString("id-ID", {
+interface ApiResponse {
+  success: boolean;
+  data: AttendanceRecord[];
+}
+
+// ── Helper functions ──
+const formatDateTime = (dateString: string | null) => {
+  if (!dateString) return "-";
+  return new Date(dateString).toLocaleTimeString("id-ID", {
     hour: "2-digit",
     minute: "2-digit",
     second: "2-digit",
   });
+};
 
-// ── Kolom tabel ────────────────────────────────────────────────────────────────
-export const columns: ColumnDef<Payment>[] = [
+const formatDate = (dateString: string) => {
+  return new Date(dateString).toLocaleDateString("id-ID", {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  });
+};
+
+const formatDuration = (clockIn: string | null, clockOut: string | null) => {
+  if (!clockIn || !clockOut) return "-";
+  const start = new Date(clockIn).getTime();
+  const end = new Date(clockOut).getTime();
+  const durationMs = end - start;
+  const hours = Math.floor(durationMs / (1000 * 60 * 60));
+  const minutes = Math.floor((durationMs % (1000 * 60 * 60)) / (1000 * 60));
+  if (hours > 0) return `${hours} jam ${minutes} menit`;
+  if (minutes > 0) return `${minutes} menit`;
+  return "kurang dari 1 menit";
+};
+
+// ── Status badge component ──
+const StatusBadge = ({ clockIn, clockOut }: { clockIn: string | null; clockOut: string | null }) => {
+  if (!clockIn) return null;
+  const isClockedOut = clockOut !== null;
+  
+  return (
+    <Badge
+      variant="outline"
+      className={`gap-1.5 px-3 py-1.5 rounded-full ${
+        isClockedOut
+          ? "bg-green-500/10 text-green-500 border-green-500/20"
+          : "bg-yellow-500/10 text-yellow-500 border-yellow-500/20"
+      }`}
+    >
+      <div className={`w-1.5 h-1.5 rounded-full ${isClockedOut ? "bg-green-500" : "bg-yellow-500 animate-pulse"}`} />
+      {isClockedOut ? "Selesai" : "Sedang Bekerja"}
+    </Badge>
+  );
+};
+
+// ── Method badge component ──
+const MethodBadge = ({ method }: { method: AttendanceRecord["method"] }) => {
+  const config = {
+    QR: { label: "QR Code", icon: Smartphone, color: "bg-blue-500/10 text-blue-500 border-blue-500/20" },
+    FACE: { label: "Face Recognition", icon: Eye, color: "bg-purple-500/10 text-purple-500 border-purple-500/20" },
+    MANUAL: { label: "Manual", icon: User, color: "bg-gray-500/10 text-gray-500 border-gray-500/20" },
+  };
+  
+  const { label, icon: Icon, color } = config[method];
+  
+  return (
+    <Badge variant="outline" className={`gap-1.5 px-2 py-1 rounded-lg ${color}`}>
+      <Icon className="w-3 h-3" />
+      <span className="text-xs">{label}</span>
+    </Badge>
+  );
+};
+
+// ── Device badge ──
+const DeviceBadge = ({ device }: { device: string | null }) => {
+  if (!device) return <span className="text-xs text-muted-foreground">-</span>;
+  
+  const isMobile = device.toLowerCase().includes("mobile") || device.toLowerCase().includes("android") || device.toLowerCase().includes("ios");
+  const Icon = isMobile ? Smartphone : Laptop;
+  
+  return (
+    <div className="flex items-center gap-1.5">
+      <Icon className="w-3 h-3 text-muted-foreground" />
+      <span className="text-xs text-muted-foreground">{device}</span>
+    </div>
+  );
+};
+
+// ── Columns definition ──
+export const columns: ColumnDef<AttendanceRecord>[] = [
   {
     id: "select",
     header: ({ table }) => (
@@ -93,14 +190,53 @@ export const columns: ColumnDef<Payment>[] = [
     enableHiding: false,
   },
   {
-    accessorKey: "checkinTime",
-    header: "Waktu Absen",
+    accessorKey: "user.name",
+    header: ({ column }) => (
+      <Button
+        variant="ghost"
+        onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
+        className="font-semibold"
+      >
+        Karyawan
+        <ArrowUpDown className="ml-2 h-4 w-4" />
+      </Button>
+    ),
     cell: ({ row }) => {
-      const time = row.getValue("checkinTime") as string;
+      const user = row.original.user;
       return (
-        <div className="flex items-center gap-2 font-mono text-sm">
-          <Clock className="w-4 h-4 text-blue-500" />
-          <span>{time}</span>
+        <div>
+          <div className="font-medium text-sm">{user.name}</div>
+          <div className="text-xs text-muted-foreground">{user.position}</div>
+        </div>
+      );
+    },
+  },
+  {
+    accessorKey: "clockIn",
+    header: "Jam Masuk",
+    cell: ({ row }) => {
+      const clockIn = row.original.clockIn;
+      return (
+        <div>
+          <div className="font-mono text-sm">{formatDateTime(clockIn)}</div>
+          <div className="text-xs text-muted-foreground">
+            {clockIn ? formatDate(clockIn) : "-"}
+          </div>
+        </div>
+      );
+    },
+  },
+  {
+    accessorKey: "clockOut",
+    header: "Jam Pulang",
+    cell: ({ row }) => {
+      const clockOut = row.original.clockOut;
+      return (
+        <div>
+          <div className="font-mono text-sm">{formatDateTime(clockOut)}</div>
+          <div className="text-xs text-muted-foreground">
+            {clockOut ? formatDuration(row.original.clockIn, clockOut) : "-"}
+          </div>
         </div>
       );
     },
@@ -108,76 +244,23 @@ export const columns: ColumnDef<Payment>[] = [
   {
     accessorKey: "status",
     header: "Status",
-    cell: ({ row }) => {
-      const status = row.getValue("status") as string;
-      const statusConfig = {
-        success: {
-          label: "Hadir",
-          color: "text-green-600",
-          icon: CheckCircle2,
-          bg: "bg-green-500/10",
-        },
-        processing: {
-          label: "Sedang Proses",
-          color: "text-yellow-600",
-          icon: Loader2,
-          bg: "bg-yellow-500/10",
-        },
-        failed: {
-          label: "Gagal",
-          color: "text-red-600",
-          icon: XCircle,
-          bg: "bg-red-500/10",
-        },
-        pending: {
-          label: "Menunggu",
-          color: "text-gray-600",
-          icon: Clock,
-          bg: "bg-gray-500/10",
-        },
-      };
-
-      const config =
-        statusConfig[status as keyof typeof statusConfig] ??
-        statusConfig.pending;
-      const Icon = config.icon;
-
-      return (
-        <div
-          className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-full ${config.bg} ${config.color} font-medium text-xs`}
-        >
-          <motion.div
-            animate={status === "processing" ? { rotate: 360 } : {}}
-            transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
-          >
-            <Icon className="w-4 h-4" />
-          </motion.div>
-          <span>{config.label}</span>
-        </div>
-      );
-    },
+    cell: ({ row }) => <StatusBadge clockIn={row.original.clockIn} clockOut={row.original.clockOut} />,
   },
   {
-    accessorKey: "email",
-    header: ({ column }) => (
-      <Button
-        variant="ghost"
-        onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
-        className="font-semibold"
-      >
-        Email
-        <ArrowUpDown className="ml-2 h-4 w-4" />
-      </Button>
-    ),
-    cell: ({ row }) => (
-      <div className="lowercase font-medium">{row.getValue("email")}</div>
-    ),
+    accessorKey: "method",
+    header: "Metode",
+    cell: ({ row }) => <MethodBadge method={row.original.method} />,
+  },
+  {
+    accessorKey: "device",
+    header: "Perangkat",
+    cell: ({ row }) => <DeviceBadge device={row.original.device} />,
   },
   {
     id: "actions",
     enableHiding: false,
     cell: ({ row }) => {
-      const payment = row.original;
+      const record = row.original;
       return (
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
@@ -188,7 +271,7 @@ export const columns: ColumnDef<Payment>[] = [
           <DropdownMenuContent align="end" className="w-48">
             <DropdownMenuLabel>Aksi</DropdownMenuLabel>
             <DropdownMenuItem
-              onClick={() => navigator.clipboard.writeText(payment.id)}
+              onClick={() => navigator.clipboard.writeText(record.id)}
               className="cursor-pointer"
             >
               Copy ID
@@ -197,6 +280,9 @@ export const columns: ColumnDef<Payment>[] = [
             <DropdownMenuItem className="cursor-pointer">
               Lihat Detail
             </DropdownMenuItem>
+            <DropdownMenuItem className="cursor-pointer">
+              Lihat Lokasi
+            </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
       );
@@ -204,28 +290,10 @@ export const columns: ColumnDef<Payment>[] = [
   },
 ];
 
-// ── Komponen utama ─────────────────────────────────────────────────────────────
+// ── Main component ──
 export function DataTableDemo() {
-  const darkModeContext = React.useContext(DarkModeContext);
-  if (!darkModeContext)
-    throw new Error("DataTableDemo harus di dalam DarkModeProvider");
-  const { darkMode } = darkModeContext;
-
-  // Waktu absen tiap karyawan dicatat saat komponen pertama kali mount (tetap).
-  const [data] = React.useState<Payment[]>(() => {
-    const now = nowString();
-    return [
-      { id: "1", checkinTime: now, status: "success",    email: "akmal@rad.co"  },
-      { id: "2", checkinTime: now, status: "success",    email: "abe@rad.co"    },
-      { id: "3", checkinTime: now, status: "processing", email: "mat@rad.co"    },
-      { id: "4", checkinTime: now, status: "success",    email: "iwan@rad.co"   },
-      { id: "5", checkinTime: now, status: "success",    email: "agus@rad.co"   },
-      { id: "6", checkinTime: now, status: "failed",     email: "morelo@rad.co" },
-      { id: "7", checkinTime: now, status: "pending",    email: "siti@rad.co"   },
-      { id: "8", checkinTime: now, status: "success",    email: "budi@rad.co"   },
-    ];
-  });
-
+  const [data, setData] = React.useState<AttendanceRecord[]>([]);
+  const [loading, setLoading] = React.useState(true);
   const [globalFilter, setGlobalFilter] = React.useState("");
   const [debouncedFilter, setDebouncedFilter] = React.useState("");
 
@@ -235,6 +303,34 @@ export function DataTableDemo() {
     return () => clearTimeout(timeout);
   }, [globalFilter]);
 
+  // Fetch real data
+  React.useEffect(() => {
+    const fetchData = async () => {
+      try {
+        const response = await fetch("/api/v1/attendance/recent", {
+          credentials: "include",
+        });
+        
+        if (response.ok) {
+          const result: ApiResponse = await response.json();
+          if (result.success) {
+            setData(result.data);
+          }
+        }
+      } catch (error) {
+        console.error("Failed to fetch attendance data:", error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchData();
+    
+    // Auto refresh every 30 seconds
+    const interval = setInterval(fetchData, 30000);
+    return () => clearInterval(interval);
+  }, []);
+
   const table = useReactTable({
     data,
     columns,
@@ -242,18 +338,27 @@ export function DataTableDemo() {
     getFilteredRowModel: getFilteredRowModel(),
     getSortedRowModel: getSortedRowModel(),
     getPaginationRowModel: getPaginationRowModel(),
+    initialState: {
+      pagination: {
+        pageSize: 10,
+      },
+    },
     state: { globalFilter: debouncedFilter },
     onGlobalFilterChange: setDebouncedFilter,
   });
 
-  // Export ke CSV — kolom sesuai dengan tipe Payment
+  // Export ke CSV
   const exportToCSV = () => {
-    const headers = ["ID", "Waktu Absen", "Status", "Email"];
-    const rows = data.map((row) => [
-      row.id,
-      row.checkinTime,
-      row.status,
-      row.email,
+    const headers = ["ID", "Karyawan", "Email", "Jam Masuk", "Jam Pulang", "Status", "Metode", "Perangkat"];
+    const rows = data.map((record) => [
+      record.id,
+      record.user.name,
+      record.user.email,
+      formatDateTime(record.clockIn),
+      formatDateTime(record.clockOut),
+      record.clockOut ? "Selesai" : "Sedang Bekerja",
+      record.method,
+      record.device || "-",
     ]);
     const csv = [headers, ...rows]
       .map((row) => row.map((cell) => `"${cell}"`).join(","))
@@ -267,34 +372,44 @@ export function DataTableDemo() {
     URL.revokeObjectURL(url);
   };
 
+  if (loading) {
+    return (
+      <div className="w-full max-w-6xl mx-auto p-6">
+        <div className="flex justify-between mb-6">
+          <Skeleton className="h-10 w-64" />
+          <div className="flex gap-3">
+            <Skeleton className="h-10 w-24" />
+            <Skeleton className="h-10 w-24" />
+          </div>
+        </div>
+        <div className="rounded-2xl overflow-hidden border">
+          <div className="p-8 text-center">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-4"></div>
+            <p className="text-muted-foreground">Memuat data absensi...</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
-      className="w-full max-w-6xl mx-auto p-6"
+      className="w-full max-w-full mx-auto"
     >
       {/* Header Controls */}
       <div className="flex flex-col md:flex-row gap-4 mb-6">
         <div className="relative flex-1 max-w-md">
           <Input
-            placeholder="Cari email..."
+            placeholder="Cari karyawan..."
             value={globalFilter}
             onChange={(e) => setGlobalFilter(e.target.value)}
-            className="pl-10 pr-4 py-2.5 rounded-xl backdrop-blur-xl"
+            className="pl-10 pr-4 py-2.5 rounded-xl"
           />
-          <div className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500">
-            <svg
-              className="w-5 h-5"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
-              />
+          <div className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
             </svg>
           </div>
         </div>
@@ -302,7 +417,7 @@ export function DataTableDemo() {
         <div className="flex gap-3">
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="outline" className="rounded-xl backdrop-blur-xl">
+              <Button variant="outline" className="rounded-xl">
                 Kolom <ChevronDown className="ml-2 w-4 h-4" />
               </Button>
             </DropdownMenuTrigger>
@@ -316,21 +431,13 @@ export function DataTableDemo() {
                     checked={col.getIsVisible()}
                     onCheckedChange={(value) => col.toggleVisibility(!!value)}
                   >
-                    {col.id === "checkinTime"
-                      ? "Waktu Absen"
-                      : col.id === "status"
-                      ? "Status"
-                      : "Email"}
+                    {col.id === "user.name" ? "Karyawan" : col.id}
                   </DropdownMenuCheckboxItem>
                 ))}
             </DropdownMenuContent>
           </DropdownMenu>
 
-          <Button
-            onClick={exportToCSV}
-            variant="outline"
-            className="rounded-xl backdrop-blur-xl"
-          >
+          <Button onClick={exportToCSV} variant="outline" className="rounded-xl">
             <Download className="w-4 h-4 mr-2" />
             Export CSV
           </Button>
@@ -338,13 +445,7 @@ export function DataTableDemo() {
       </div>
 
       {/* Table */}
-      <div
-        className={`rounded-2xl overflow-hidden border backdrop-blur-2xl shadow-2xl ${
-          darkMode
-            ? "bg-gray-900/70 border-gray-800"
-            : "bg-white/70 border-gray-200"
-        }`}
-      >
+      <div className="rounded-2xl overflow-hidden border bg-blue-950 dark:bg-gray-900/50 backdrop-blur-sm">
         <Table>
           <TableHeader>
             {table.getHeaderGroups().map((headerGroup) => (
@@ -372,9 +473,7 @@ export function DataTableDemo() {
                     animate={{ opacity: 1, x: 0 }}
                     exit={{ opacity: 0, x: 20 }}
                     transition={{ duration: 0.3 }}
-                    className={`border-b transition-all duration-300 ${
-                      darkMode ? "hover:bg-gray-800/50" : "hover:bg-gray-50"
-                    } hover:shadow-lg hover:-translate-y-0.5`}
+                    className="border-b hover:bg-muted/50 transition-all duration-300"
                   >
                     {row.getVisibleCells().map((cell) => (
                       <TableCell key={cell.id} className="py-4">
@@ -390,9 +489,13 @@ export function DataTableDemo() {
                 <TableRow>
                   <TableCell
                     colSpan={columns.length}
-                    className="h-32 text-center text-gray-500"
+                    className="h-32 text-center text-muted-foreground"
                   >
-                    Tidak ada data ditemukan.
+                    <div className="flex flex-col items-center gap-2">
+                      <Clock className="w-8 h-8 opacity-50" />
+                      <p>Belum ada data absensi</p>
+                      <p className="text-xs">Data akan muncul setelah karyawan melakukan absen</p>
+                    </div>
                   </TableCell>
                 </TableRow>
               )}
@@ -402,8 +505,8 @@ export function DataTableDemo() {
       </div>
 
       {/* Pagination */}
-      <div className="flex items-center justify-between mt-6">
-        <div className="flex items-center gap-2 text-sm text-gray-600">
+      <div className="flex flex-col sm:flex-row items-center justify-between gap-4 mt-6">
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
           <span>Menampilkan</span>
           <Select
             value={`${table.getState().pagination.pageSize}`}
@@ -433,6 +536,9 @@ export function DataTableDemo() {
           >
             Sebelumnya
           </Button>
+          <span className="text-sm text-muted-foreground">
+            Halaman {table.getState().pagination.pageIndex + 1} dari {table.getPageCount()}
+          </span>
           <Button
             variant="outline"
             size="sm"
@@ -443,11 +549,6 @@ export function DataTableDemo() {
             Berikutnya
           </Button>
         </div>
-
-        <span className="text-sm text-gray-600">
-          Halaman {table.getState().pagination.pageIndex + 1} dari{" "}
-          {table.getPageCount()}
-        </span>
       </div>
     </motion.div>
   );

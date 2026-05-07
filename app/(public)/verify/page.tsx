@@ -5,6 +5,8 @@ import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
 import FaceRecognition from "@/components/FaceRecognition";
+import { useAttendanceStatus } from "@/hooks/useAttendanceStatus";
+import { useQueryClient } from "@tanstack/react-query";
 
 // ── Types ─────────────────────────────────────────────────────────
 type PageStatus =
@@ -19,18 +21,6 @@ interface SessionCookie {
   attendanceId: string;
   name: string;
   checkInTime: number;
-}
-
-interface AttendanceData {
-  success: boolean;
-  checkedIn?: boolean;
-  alreadyDone?: boolean;
-  hasAttendance?: boolean;
-  attendanceId?: string;
-  name?: string;
-  clockIn?: string;
-  clockOut?: string;
-  durationText?: string;
 }
 
 interface BroadcastData {
@@ -62,15 +52,6 @@ interface ScanResponse {
   message?: string;
 }
 
-interface ClockOutResponse {
-  success: boolean;
-  error?: string;
-  data?: {
-    durationText?: string;
-  };
-  durationText?: string;
-}
-
 // ── Helpers ───────────────────────────────────────────────────────
 const formatDuration = (ms: number): string => {
   const s = Math.floor(ms / 1000);
@@ -82,7 +63,6 @@ const formatDuration = (ms: number): string => {
   return `${sec} detik`;
 };
 
-// Ambil cookie dari browser
 function getSessionFromCookie(): SessionCookie | null {
   if (typeof document === "undefined") return null;
   const match = document.cookie.match(/absensi_session=([^;]+)/);
@@ -94,28 +74,27 @@ function getSessionFromCookie(): SessionCookie | null {
   }
 }
 
-// Hapus cookie
 function deleteSessionCookie(): void {
   if (typeof document === "undefined") return;
   document.cookie = "absensi_session=; path=/; max-age=0";
 }
 
-// Broadcast ke tab/device lain
 function broadcastSync(type: string, data?: Omit<BroadcastData, 'type' | 'timestamp'>): void {
   if (typeof window === "undefined") return;
   
   const broadcastData: BroadcastData = { type, timestamp: Date.now(), ...data };
   
-  // BroadcastChannel untuk cross-tab communication
   if ("BroadcastChannel" in window) {
     const channel = new BroadcastChannel("attendance-sync");
     channel.postMessage(broadcastData);
     channel.close();
   }
   
-  // Storage event sebagai fallback
   localStorage.setItem("attendance_sync", JSON.stringify(broadcastData));
   setTimeout(() => localStorage.removeItem("attendance_sync"), 100);
+  
+  // Custom event untuk halaman yang sama
+  window.dispatchEvent(new CustomEvent("attendance-sync", { detail: broadcastData }));
 }
 
 function LoadingScreen() {
@@ -140,6 +119,10 @@ export default function VerifyQRPage() {
 function VerifyQRContent() {
   const searchParams = useSearchParams();
   const code = searchParams.get("code");
+  const queryClient = useQueryClient();
+  
+  // ✅ Gunakan TanStack Query hook
+  const { data: attendanceStatus, refetch: refetchStatus } = useAttendanceStatus();
 
   const [status, setStatus] = useState<PageStatus>("loading");
   const [message, setMessage] = useState("");
@@ -154,13 +137,43 @@ function VerifyQRContent() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [loadingStep, setLoadingStep] = useState("");
   
-  // Face recognition states
   const [showFaceModal, setShowFaceModal] = useState(false);
   const [faceType, setFaceType] = useState<"CLOCK_IN" | "CLOCK_OUT">("CLOCK_IN");
   
-  // Refs untuk cleanup
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
-  const pollingRef = useRef<NodeJS.Timeout | null>(null);
+
+  // ── Sync dengan attendance status dari TanStack Query ──
+  useEffect(() => {
+    if (!attendanceStatus) return;
+    
+    console.log("📡 Attendance status updated:", attendanceStatus);
+    
+    // Sudah clock out
+    if (attendanceStatus.alreadyDone === true) {
+      deleteSessionCookie();
+      setSession(null);
+      setStatus("success-out");
+      setCheckoutDuration(attendanceStatus.durationText || "Selesai");
+      return;
+    }
+    
+    // Masih dalam sesi (sudah clock in, belum clock out)
+    if (attendanceStatus.checkedIn && attendanceStatus.clockIn && attendanceStatus.attendanceId) {
+      setSession({
+        attendanceId: attendanceStatus.attendanceId,
+        name: attendanceStatus.name || "User",
+        clockIn: attendanceStatus.clockIn,
+      });
+      setStatus("already-in");
+      return;
+    }
+    
+    // Belum absen sama sekali
+    if (!attendanceStatus.checkedIn && !attendanceStatus.alreadyDone && !attendanceStatus.hasAttendance) {
+      setSession(null);
+      setStatus("ready");
+    }
+  }, [attendanceStatus]);
 
   // ── TIMER ──
   useEffect(() => {
@@ -177,9 +190,7 @@ function VerifyQRContent() {
     }, 1000);
     
     return () => {
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current);
-      }
+      if (intervalRef.current) clearInterval(intervalRef.current);
     };
   }, [session]);
 
@@ -191,118 +202,6 @@ function VerifyQRContent() {
     return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(sec).padStart(2, "0")}`;
   })();
 
-  // ── SYNC FUNCTION ──
-  const syncWithServer = useCallback(async () => {
-    try {
-      const res = await fetch("/api/v1/attendance/me", {
-        credentials: "include",
-        cache: "no-store",
-      });
-      
-      if (!res.ok) return;
-      
-      const data = await res.json() as AttendanceData;
-      const localSession = getSessionFromCookie();
-      
-      // CASE 1: Server sudah clock out (selesai)
-      if (data.alreadyDone === true || (data.checkedIn === false && data.hasAttendance === true)) {
-        if (localSession || session) {
-          console.log("🔄 Syncing: Server indicates clocked out");
-          deleteSessionCookie();
-          setSession(null);
-          setStatus("success-out");
-          setCheckoutDuration(data.durationText || "Selesai");
-        }
-        return;
-      }
-      
-      // CASE 2: Server tidak punya attendance aktif
-      if (!data.hasAttendance && !data.checkedIn) {
-        if (localSession || session) {
-          console.log("🔄 Syncing: Server has no active session");
-          deleteSessionCookie();
-          setSession(null);
-          setStatus("ready");
-        }
-        return;
-      }
-      
-      // CASE 3: Server memiliki session aktif
-      if (data.checkedIn && data.clockIn && data.attendanceId) {
-        if (!session || session.attendanceId !== data.attendanceId) {
-          console.log("🔄 Syncing: Updating session from server");
-          setSession({
-            attendanceId: data.attendanceId,
-            name: data.name ?? "User",
-            clockIn: data.clockIn,
-          });
-          setStatus("already-in");
-        }
-      }
-    } catch (error) {
-      console.error("Sync error:", error);
-    }
-  }, [session]);
-
-  // ── POLLING & BROADCAST LISTENER ──
-  useEffect(() => {
-    if (!code) return;
-
-    // Initial sync
-    syncWithServer();
-
-    // Polling setiap 3 detik
-    pollingRef.current = setInterval(syncWithServer, 3000);
-
-    // Broadcast channel listener
-    let broadcastChannel: BroadcastChannel | null = null;
-    if (typeof window !== "undefined" && "BroadcastChannel" in window) {
-      broadcastChannel = new BroadcastChannel("attendance-sync");
-      broadcastChannel.onmessage = (event: MessageEvent<BroadcastData>) => {
-        console.log("📡 Broadcast received:", event.data);
-        if (event.data.type === "CLOCK_OUT" || event.data.type === "SESSION_CHANGED") {
-          deleteSessionCookie();
-          setSession(null);
-          setStatus("success-out");
-          syncWithServer();
-        }
-      };
-    }
-
-    // Storage event listener (fallback)
-    const handleStorageChange = (e: StorageEvent): void => {
-      if (e.key === "attendance_sync" && e.newValue) {
-        try {
-          const data = JSON.parse(e.newValue) as BroadcastData;
-          if (data.type === "CLOCK_OUT") {
-            console.log("🔄 Storage event: Clock out detected");
-            deleteSessionCookie();
-            setSession(null);
-            setStatus("success-out");
-            syncWithServer();
-          }
-        } catch (error) {
-          console.error("Failed to parse storage event:", error);
-        }
-      }
-    };
-    window.addEventListener("storage", handleStorageChange);
-
-    // Custom event listener
-    const handleCustomSync = (): void => {
-      console.log("🔄 Custom sync event received");
-      syncWithServer();
-    };
-    window.addEventListener("attendance-sync", handleCustomSync);
-
-    return () => {
-      if (pollingRef.current) clearInterval(pollingRef.current);
-      if (broadcastChannel) broadcastChannel.close();
-      window.removeEventListener("storage", handleStorageChange);
-      window.removeEventListener("attendance-sync", handleCustomSync);
-    };
-  }, [code, syncWithServer]);
-
   // ── INIT ──
   useEffect(() => {
     if (!code) {
@@ -311,7 +210,6 @@ function VerifyQRContent() {
       return;
     }
 
-    // Restore dari cookie
     const local = getSessionFromCookie();
     if (local) {
       setSession({
@@ -320,8 +218,6 @@ function VerifyQRContent() {
         clockIn: new Date(local.checkInTime).toISOString(),
       });
       setStatus("already-in");
-    } else {
-      setStatus("ready");
     }
   }, [code]);
 
@@ -347,10 +243,7 @@ function VerifyQRContent() {
       });
       
       clearTimeout(timeoutId);
-
-      setLoadingStep("Memproses response...");
       const data = await res.json() as ScanResponse;
-      console.log("📦 Response:", data);
 
       if (data.error) {
         setStatus("error");
@@ -387,8 +280,9 @@ function VerifyQRContent() {
         });
         setStatus("success-in");
         
-        // Broadcast ke device lain
         broadcastSync("SESSION_CHANGED", { attendanceId: data.attendanceId, action: "CLOCK_IN" });
+        await refetchStatus();
+        queryClient.invalidateQueries({ queryKey: ["attendance", "status"] });
       } else {
         throw new Error(data.message || "Gagal absen");
       }
@@ -404,7 +298,7 @@ function VerifyQRContent() {
       setIsSubmitting(false);
       setLoadingStep("");
     }
-  }, [code, isSubmitting]);
+  }, [code, isSubmitting, refetchStatus, queryClient]);
 
   // ── CLOCK OUT with QR ──
   const handleClockOut = useCallback(async () => {
@@ -448,8 +342,7 @@ function VerifyQRContent() {
       });
       
       clearTimeout(timeoutId);
-
-      const data = await res.json() as ClockOutResponse;
+      const data = await res.json();
 
       if (!res.ok || !data.success) {
         setStatus("error");
@@ -463,9 +356,12 @@ function VerifyQRContent() {
       setStatus("success-out");
       
       deleteSessionCookie();
-      
-      // Broadcast ke semua device lain bahwa sudah clock out
       broadcastSync("CLOCK_OUT", { attendanceId: session.attendanceId, durationText });
+      
+      // ✅ Invalidate queries untuk refresh data
+      await refetchStatus();
+      queryClient.invalidateQueries({ queryKey: ["attendance", "status"] });
+      queryClient.invalidateQueries({ queryKey: ["auth", "me"] });
       
     } catch (error) {
       console.error("Clock out error:", error);
@@ -479,7 +375,7 @@ function VerifyQRContent() {
       setIsSubmitting(false);
       setLoadingStep("");
     }
-  }, [session, isSubmitting]);
+  }, [session, isSubmitting, refetchStatus, queryClient]);
 
   // ── FACE RECOGNITION HANDLER ──
   const handleFaceCapture = async (photoBase64: string): Promise<void> => {
@@ -520,7 +416,6 @@ function VerifyQRContent() {
       });
       
       clearTimeout(timeoutId);
-
       const data = await response.json() as FaceResponse;
 
       if (!response.ok || data.error) {
@@ -547,14 +442,18 @@ function VerifyQRContent() {
         });
         setStatus("success-in");
         broadcastSync("SESSION_CHANGED", { attendanceId: data.attendanceId, action: "CLOCK_IN" });
+        await refetchStatus();
       } else {
         setCheckoutDuration(data.durasi || data.durationText || "Berhasil");
         setSession(null);
         setStatus("success-out");
         deleteSessionCookie();
         broadcastSync("CLOCK_OUT", { attendanceId: data.attendanceId });
+        await refetchStatus();
       }
       
+      queryClient.invalidateQueries({ queryKey: ["attendance", "status"] });
+      queryClient.invalidateQueries({ queryKey: ["auth", "me"] });
       setShowFaceModal(false);
     } catch (error) {
       console.error("Face capture error:", error);

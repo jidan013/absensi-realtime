@@ -1,6 +1,6 @@
-"use client"
+"use client";
 
-import * as React from "react"
+import * as React from "react";
 import {
   ColumnDef,
   ColumnFiltersState,
@@ -12,11 +12,11 @@ import {
   SortingState,
   useReactTable,
   VisibilityState,
-} from "@tanstack/react-table"
-import { ArrowUpDown, ChevronDown, MoreHorizontal } from "lucide-react"
+} from "@tanstack/react-table";
+import { ArrowUpDown, ChevronDown, MoreHorizontal, Search, Eye, CheckCircle, XCircle, Clock } from "lucide-react";
 
-import { Button } from "@/components/ui/button"
-import { Checkbox } from "@/components/ui/checkbox"
+import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
@@ -25,8 +25,8 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu"
-import { Input } from "@/components/ui/input"
+} from "@/components/ui/dropdown-menu";
+import { Input } from "@/components/ui/input";
 import {
   Table,
   TableBody,
@@ -34,49 +34,82 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from "@/components/ui/table"
+} from "@/components/ui/table";
+import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
 
-const data: Payment[] = [
-  {
-    id: "m5gr84i9",
-    amount: 316,
-    status: "success",
-    email: "ken99@example.com",
-  },
-  {
-    id: "3u1reuv4",
-    amount: 242,
-    status: "success",
-    email: "Abe45@example.com",
-  },
-  {
-    id: "derv1ws0",
-    amount: 837,
-    status: "processing",
-    email: "Monserrat44@example.com",
-  },
-  {
-    id: "5kma53ae",
-    amount: 874,
-    status: "success",
-    email: "Silas22@example.com",
-  },
-  {
-    id: "bhqecj4p",
-    amount: 721,
-    status: "failed",
-    email: "carmella@example.com",
-  },
-]
-
-export type Payment = {
-  id: string
-  amount: number
-  status: "pending" | "processing" | "success" | "failed"
-  email: string
+// Types
+interface AttendanceRecord {
+  id: string;
+  user: {
+    name: string;
+    email: string;
+    position: string;
+  };
+  clockIn: string;
+  clockOut: string | null;
+  status: "present" | "late" | "absent" | "on_time";
+  method: "QR" | "FACE" | "MANUAL";
+  createdAt: string;
 }
 
-export const columns: ColumnDef<Payment>[] = [
+// Format date helper
+const formatDateTime = (dateString: string | null) => {
+  if (!dateString) return "-";
+  return new Date(dateString).toLocaleTimeString("id-ID", {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  });
+};
+
+const formatDate = (dateString: string) => {
+  return new Date(dateString).toLocaleDateString("id-ID", {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  });
+};
+
+// Status badge component
+const StatusBadge = ({ status }: { status: AttendanceRecord["status"] }) => {
+  const statusConfig = {
+    present: { label: "Hadir", color: "bg-green-500/10 text-green-500 border-green-500/20", icon: CheckCircle },
+    on_time: { label: "Tepat Waktu", color: "bg-emerald-500/10 text-emerald-500 border-emerald-500/20", icon: CheckCircle },
+    late: { label: "Terlambat", color: "bg-yellow-500/10 text-yellow-500 border-yellow-500/20", icon: Clock },
+    absent: { label: "Tidak Hadir", color: "bg-red-500/10 text-red-500 border-red-500/20", icon: XCircle },
+  };
+
+  const config = statusConfig[status];
+  const Icon = config.icon;
+
+  return (
+    <Badge variant="outline" className={`${config.color} gap-1`}>
+      <Icon className="w-3 h-3" />
+      {config.label}
+    </Badge>
+  );
+};
+
+// Method badge
+const MethodBadge = ({ method }: { method: AttendanceRecord["method"] }) => {
+  const methodConfig = {
+    QR: { label: "QR Code", color: "bg-blue-500/10 text-blue-500 border-blue-500/20" },
+    FACE: { label: "Face Recognition", color: "bg-purple-500/10 text-purple-500 border-purple-500/20" },
+    MANUAL: { label: "Manual", color: "bg-gray-500/10 text-gray-500 border-gray-500/20" },
+  };
+
+  const config = methodConfig[method];
+
+  return (
+    <Badge variant="outline" className={config.color}>
+      {config.label}
+    </Badge>
+  );
+};
+
+// Columns definition
+const columns: ColumnDef<AttendanceRecord>[] = [
   {
     id: "select",
     header: ({ table }) => (
@@ -100,81 +133,134 @@ export const columns: ColumnDef<Payment>[] = [
     enableHiding: false,
   },
   {
-    accessorKey: "status",
-    header: "Status",
-    cell: ({ row }) => (
-      <div className="capitalize">{row.getValue("status")}</div>
-    ),
+    accessorKey: "user.name",
+    header: ({ column }) => {
+      return (
+        <Button
+          variant="ghost"
+          onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
+          className="font-semibold"
+        >
+          Karyawan
+          <ArrowUpDown className="ml-2 h-4 w-4" />
+        </Button>
+      );
+    },
+    cell: ({ row }) => {
+      const user = row.original.user;
+      return (
+        <div>
+          <div className="font-medium">{user.name}</div>
+          <div className="text-xs text-muted-foreground">{user.position}</div>
+        </div>
+      );
+    },
   },
   {
-    accessorKey: "email",
+    accessorKey: "clockIn",
     header: ({ column }) => {
       return (
         <Button
           variant="ghost"
           onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
         >
-          Email
-          <ArrowUpDown />
+          Jam Masuk
+          <ArrowUpDown className="ml-2 h-4 w-4" />
         </Button>
-      )
+      );
     },
-    cell: ({ row }) => <div className="lowercase">{row.getValue("email")}</div>,
+    cell: ({ row }) => {
+      const clockIn = row.original.clockIn;
+      return (
+        <div>
+          <div className="font-mono text-sm">{formatDateTime(clockIn)}</div>
+          <div className="text-xs text-muted-foreground">{formatDate(clockIn)}</div>
+        </div>
+      );
+    },
   },
   {
-    accessorKey: "amount",
-    header: () => <div className="text-right">Amount</div>,
+    accessorKey: "clockOut",
+    header: "Jam Pulang",
     cell: ({ row }) => {
-      const amount = parseFloat(row.getValue("amount"))
-
-      // Format the amount as a dollar amount
-      const formatted = new Intl.NumberFormat("en-US", {
-        style: "currency",
-        currency: "USD",
-      }).format(amount)
-
-      return <div className="text-right font-medium">{formatted}</div>
+      const clockOut = row.original.clockOut;
+      return (
+        <div className="font-mono text-sm">
+          {clockOut ? formatDateTime(clockOut) : "-"}
+        </div>
+      );
     },
+  },
+  {
+    accessorKey: "status",
+    header: "Status",
+    cell: ({ row }) => <StatusBadge status={row.original.status} />,
+  },
+  {
+    accessorKey: "method",
+    header: "Metode",
+    cell: ({ row }) => <MethodBadge method={row.original.method} />,
   },
   {
     id: "actions",
     enableHiding: false,
     cell: ({ row }) => {
-      const payment = row.original
+      const record = row.original;
 
       return (
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button variant="ghost" className="h-8 w-8 p-0">
               <span className="sr-only">Open menu</span>
-              <MoreHorizontal />
+              <MoreHorizontal className="h-4 w-4" />
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
             <DropdownMenuLabel>Actions</DropdownMenuLabel>
-            <DropdownMenuItem
-              onClick={() => navigator.clipboard.writeText(payment.id)}
-            >
-              Copy payment ID
+            <DropdownMenuItem onClick={() => navigator.clipboard.writeText(record.id)}>
+              Copy ID
             </DropdownMenuItem>
             <DropdownMenuSeparator />
-            <DropdownMenuItem>View customer</DropdownMenuItem>
-            <DropdownMenuItem>View payment details</DropdownMenuItem>
+            <DropdownMenuItem>View details</DropdownMenuItem>
+            <DropdownMenuItem>View user profile</DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
-      )
+      );
     },
   },
-]
+];
 
 export function DataTableDemo() {
-  const [sorting, setSorting] = React.useState<SortingState>([])
-  const [columnFilters, setColumnFilters] = React.useState<ColumnFiltersState>(
-    []
-  )
-  const [columnVisibility, setColumnVisibility] =
-    React.useState<VisibilityState>({})
-  const [rowSelection, setRowSelection] = React.useState({})
+  const [data, setData] = React.useState<AttendanceRecord[]>([]);
+  const [loading, setLoading] = React.useState(true);
+  const [sorting, setSorting] = React.useState<SortingState>([]);
+  const [columnFilters, setColumnFilters] = React.useState<ColumnFiltersState>([]);
+  const [columnVisibility, setColumnVisibility] = React.useState<VisibilityState>({});
+  const [rowSelection, setRowSelection] = React.useState({});
+
+  // Fetch real data
+  React.useEffect(() => {
+    const fetchAttendanceData = async () => {
+      try {
+        const response = await fetch("/api/v1/attendance/recent", {
+          credentials: "include",
+        });
+        
+        if (response.ok) {
+          const result = await response.json();
+          if (result.success && result.data) {
+            setData(result.data);
+          }
+        }
+      } catch (error) {
+        console.error("Failed to fetch attendance data:", error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchAttendanceData();
+  }, []);
 
   const table = useReactTable({
     data,
@@ -193,47 +279,75 @@ export function DataTableDemo() {
       columnVisibility,
       rowSelection,
     },
-  })
+    initialState: {
+      pagination: {
+        pageSize: 10,
+      },
+    },
+  });
+
+  if (loading) {
+    return (
+      <div className="w-full">
+        <div className="flex items-center justify-between py-4">
+          <Skeleton className="h-10 w-64" />
+          <Skeleton className="h-10 w-32" />
+        </div>
+        <div className="rounded-md border">
+          <div className="p-8 text-center">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-4"></div>
+            <p className="text-muted-foreground">Memuat data absensi...</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div className="w-[50%] shadow-2xl">
-      <div className="flex items-center py-4">
-        <Input
-          placeholder="Filter emails..."
-          value={(table.getColumn("email")?.getFilterValue() as string) ?? ""}
-          onChange={(event) =>
-            table.getColumn("email")?.setFilterValue(event.target.value)
-          }
-          className="max-w-sm"
-        />
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="outline" className="ml-auto">
-              Columns <ChevronDown />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            {table
-              .getAllColumns()
-              .filter((column) => column.getCanHide())
-              .map((column) => {
-                return (
-                  <DropdownMenuCheckboxItem
-                    key={column.id}
-                    className="capitalize"
-                    checked={column.getIsVisible()}
-                    onCheckedChange={(value) =>
-                      column.toggleVisibility(!!value)
-                    }
-                  >
-                    {column.id}
-                  </DropdownMenuCheckboxItem>
-                )
-              })}
-          </DropdownMenuContent>
-        </DropdownMenu>
+    <div className="w-full">
+      <div className="flex flex-col sm:flex-row items-center justify-between gap-4 py-4">
+        <div className="relative w-full sm:w-96">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Input
+            placeholder="Cari karyawan..."
+            value={(table.getColumn("user.name")?.getFilterValue() as string) ?? ""}
+            onChange={(event) =>
+              table.getColumn("user.name")?.setFilterValue(event.target.value)
+            }
+            className="pl-9"
+          />
+        </div>
+        <div className="flex items-center gap-2">
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" className="ml-auto">
+                Columns <ChevronDown className="ml-2 h-4 w-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              {table
+                .getAllColumns()
+                .filter((column) => column.getCanHide())
+                .map((column) => {
+                  return (
+                    <DropdownMenuCheckboxItem
+                      key={column.id}
+                      className="capitalize"
+                      checked={column.getIsVisible()}
+                      onCheckedChange={(value) =>
+                        column.toggleVisibility(!!value)
+                      }
+                    >
+                      {column.id === "user.name" ? "Karyawan" : column.id}
+                    </DropdownMenuCheckboxItem>
+                  );
+                })}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
       </div>
-      <div className="overflow-hidden rounded-md border">
+
+      <div className="rounded-md border overflow-hidden">
         <Table>
           <TableHeader>
             {table.getHeaderGroups().map((headerGroup) => (
@@ -248,7 +362,7 @@ export function DataTableDemo() {
                             header.getContext()
                           )}
                     </TableHead>
-                  )
+                  );
                 })}
               </TableRow>
             ))}
@@ -259,6 +373,7 @@ export function DataTableDemo() {
                 <TableRow
                   key={row.id}
                   data-state={row.getIsSelected() && "selected"}
+                  className="hover:bg-muted/50 transition-colors"
                 >
                   {row.getVisibleCells().map((cell) => (
                     <TableCell key={cell.id}>
@@ -274,39 +389,50 @@ export function DataTableDemo() {
               <TableRow>
                 <TableCell
                   colSpan={columns.length}
-                  className="h-24 text-center"
+                  className="h-32 text-center"
                 >
-                  No results.
+                  <div className="flex flex-col items-center justify-center gap-2">
+                    <Eye className="h-8 w-8 text-muted-foreground" />
+                    <p className="text-muted-foreground">Belum ada data absensi</p>
+                    <p className="text-xs text-muted-foreground">
+                      Data absensi akan muncul setelah karyawan melakukan absen
+                    </p>
+                  </div>
                 </TableCell>
               </TableRow>
             )}
           </TableBody>
         </Table>
       </div>
-      <div className="flex items-center justify-end space-x-2 py-4">
-        <div className="text-muted-foreground flex-1 text-sm">
-          {table.getFilteredSelectedRowModel().rows.length} of{" "}
-          {table.getFilteredRowModel().rows.length} row(s) selected.
+
+      <div className="flex flex-col sm:flex-row items-center justify-between gap-4 py-4">
+        <div className="text-sm text-muted-foreground">
+          {table.getFilteredSelectedRowModel().rows.length} dari{" "}
+          {table.getFilteredRowModel().rows.length} baris dipilih.
         </div>
-        <div className="space-x-2">
+        <div className="flex items-center gap-2">
           <Button
             variant="outline"
             size="sm"
             onClick={() => table.previousPage()}
             disabled={!table.getCanPreviousPage()}
           >
-            Previous
+            Sebelumnya
           </Button>
+          <span className="text-sm text-muted-foreground">
+            Halaman {table.getState().pagination.pageIndex + 1} dari{" "}
+            {table.getPageCount()}
+          </span>
           <Button
             variant="outline"
             size="sm"
             onClick={() => table.nextPage()}
             disabled={!table.getCanNextPage()}
           >
-            Next
+            Selanjutnya
           </Button>
         </div>
       </div>
     </div>
-  )
+  );
 }
