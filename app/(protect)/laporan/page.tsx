@@ -22,6 +22,7 @@ import {
   LogIn,
   LogOut,
   Hourglass,
+  AlertCircle,
 } from "lucide-react";
 import { toast, Toaster } from "sonner";
 import Image from "next/image";
@@ -51,31 +52,51 @@ interface Stats {
   tanpaLokasi: number;
 }
 
+interface ApiResponse {
+  success?: boolean;
+  data?: AttendanceRecord[];
+  error?: string;
+}
+
 const PAGE_SIZE = 10;
 
 // ── Helpers ───────────────────────────────────────────────────────
-const formatTime = (dt: string | null | undefined) =>
-  dt
-    ? new Date(dt).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" })
-    : "—";
+const formatTime = (dt: string | null | undefined) => {
+  if (!dt) return "—";
+  try {
+    return new Date(dt).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" });
+  } catch {
+    return "—";
+  }
+};
 
-const formatDate = (dt: string) =>
-  new Date(dt).toLocaleDateString("id-ID", { day: "2-digit", month: "short" });
+const formatDate = (dt: string) => {
+  try {
+    return new Date(dt).toLocaleDateString("id-ID", { day: "2-digit", month: "short" });
+  } catch {
+    return "-";
+  }
+};
 
 const calcDuration = (
   clockIn: string | null | undefined,
   clockOut: string | null | undefined
 ): string | null => {
   if (!clockIn) return null;
-  const start = new Date(clockIn).getTime();
-  const end = clockOut ? new Date(clockOut).getTime() : Date.now();
-  const totalMs = end - start;
-  if (totalMs <= 0) return null;
-  const totalSec = Math.floor(totalMs / 1000);
-  const h = Math.floor(totalSec / 3600);
-  const m = Math.floor((totalSec % 3600) / 60);
-  if (h > 0) return `${h}j ${m}m`;
-  return `${m}m`;
+  try {
+    const start = new Date(clockIn).getTime();
+    const end = clockOut ? new Date(clockOut).getTime() : Date.now();
+    const totalMs = end - start;
+    if (totalMs <= 0) return null;
+    const totalSec = Math.floor(totalMs / 1000);
+    const h = Math.floor(totalSec / 3600);
+    const m = Math.floor((totalSec % 3600) / 60);
+    if (h > 0) return `${h}j ${m}m`;
+    if (m > 0) return `${m}m`;
+    return "<1m";
+  } catch {
+    return null;
+  }
 };
 
 // ── Live duration cell — updates every minute for ongoing rows ────
@@ -89,9 +110,9 @@ function LiveDuration({
   const [dur, setDur] = useState(() => calcDuration(clockIn, clockOut));
 
   useEffect(() => {
-    if (clockOut) return; // already checked out — static
+    if (clockOut) return;
     setDur(calcDuration(clockIn, clockOut));
-    const interval = setInterval(() => setDur(calcDuration(clockIn, clockOut)), 60_000);
+    const interval = setInterval(() => setDur(calcDuration(clockIn, clockOut)), 60000);
     return () => clearInterval(interval);
   }, [clockIn, clockOut]);
 
@@ -144,9 +165,26 @@ export default function LaporanPage() {
       const res = await fetch(`/api/v1/attendance/list?${params.toString()}`, {
         cache: "no-store",
       });
-      if (!res.ok) throw new Error("Gagal memuat data");
+      
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({ error: "Unknown error" }));
+        throw new Error(errorData.error || "Gagal memuat data");
+      }
 
-      const data: AttendanceRecord[] = await res.json();
+      const response: ApiResponse | AttendanceRecord[] = await res.json();
+      
+      // Handle both response formats
+      let data: AttendanceRecord[] = [];
+      if (Array.isArray(response)) {
+        data = response;
+      } else if (response.success && response.data) {
+        data = response.data;
+      } else if (response.success === false) {
+        throw new Error(response.error || "Gagal memuat data");
+      } else {
+        data = [];
+      }
+      
       setRecords(data);
       setStats({
         total: data.length,
@@ -154,14 +192,17 @@ export default function LaporanPage() {
         sudahPulang: data.filter((d) => !!d.clockOut).length,
         tanpaLokasi: data.filter((d) => !d.location).length,
       });
-    } catch {
-      toast.error("Gagal memuat data absensi");
+    } catch (err) {
+      console.error("Fetch error:", err);
+      toast.error(err instanceof Error ? err.message : "Gagal memuat data absensi");
     } finally {
       setLoading(false);
     }
   }, [startDate, endDate]);
 
-  useEffect(() => { void fetchData(); }, [fetchData]);
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -174,11 +215,16 @@ export default function LaporanPage() {
     });
   }, [records, search]);
 
-  useEffect(() => { setPage(1); }, [search, startDate, endDate]);
+  useEffect(() => {
+    setPage(1);
+  }, [search, startDate, endDate]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const safePage = Math.min(page, totalPages);
-  useEffect(() => { if (page !== safePage) setPage(safePage); }, [page, safePage]);
+  
+  useEffect(() => {
+    if (page !== safePage) setPage(safePage);
+  }, [page, safePage]);
 
   const paginated = filtered.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
 
@@ -192,7 +238,11 @@ export default function LaporanPage() {
       const res = await fetch(`/api/v1/attendance/export?${params.toString()}`, {
         cache: "no-store",
       });
-      if (!res.ok) throw new Error("Export gagal");
+      
+      if (!res.ok) {
+        const error = await res.json().catch(() => ({ error: "Export gagal" }));
+        throw new Error(error.error || "Export gagal");
+      }
 
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
@@ -204,8 +254,9 @@ export default function LaporanPage() {
       a.remove();
       URL.revokeObjectURL(url);
       toast.success("File Excel berhasil diunduh!");
-    } catch {
-      toast.error("Gagal mengekspor data");
+    } catch (err) {
+      console.error("Export error:", err);
+      toast.error(err instanceof Error ? err.message : "Gagal mengekspor data");
     } finally {
       setExporting(false);
     }
@@ -260,10 +311,10 @@ export default function LaporanPage() {
   ];
 
   return (
-    <>
+    <div>
       <Toaster position="top-center" richColors />
 
-      {/* ── Photo Preview Modal ── */}
+      {/* Photo Preview Modal */}
       <AnimatePresence>
         {previewPhoto && (
           <motion.div
@@ -312,7 +363,7 @@ export default function LaporanPage() {
         )}
       </AnimatePresence>
 
-      {/* ── Main Layout ── */}
+      {/* Main Layout */}
       <div className="min-h-screen bg-gradient-to-br from-indigo-50 via-white to-cyan-50 dark:from-black dark:via-gray-950 dark:to-indigo-950 p-4 md:p-8">
         <div className="max-w-7xl mx-auto space-y-8">
 
@@ -335,7 +386,7 @@ export default function LaporanPage() {
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.97 }}
               type="button"
-              onClick={() => void handleExport()}
+              onClick={handleExport}
               disabled={exporting || records.length === 0}
               className="flex items-center gap-3 px-8 py-4 bg-gradient-to-r from-emerald-500 to-teal-600 text-white font-bold text-lg rounded-2xl shadow-xl hover:shadow-2xl disabled:opacity-50 disabled:cursor-not-allowed transition-all"
             >
@@ -403,7 +454,7 @@ export default function LaporanPage() {
                   whileHover={{ scale: 1.03 }}
                   whileTap={{ scale: 0.97 }}
                   type="button"
-                  onClick={() => void fetchData()}
+                  onClick={fetchData}
                   className="px-6 py-3.5 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-xl font-bold hover:shadow-lg transition-all flex items-center gap-2"
                 >
                   <RefreshCw className="w-4 h-4" />
@@ -430,7 +481,7 @@ export default function LaporanPage() {
             ) : filtered.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-32 gap-4">
                 <div className="w-20 h-20 rounded-3xl bg-gradient-to-br from-indigo-100 to-purple-100 dark:from-indigo-900/40 dark:to-purple-900/40 flex items-center justify-center">
-                  <Users className="w-10 h-10 text-indigo-400" />
+                  <AlertCircle className="w-10 h-10 text-indigo-400" />
                 </div>
                 <p className="text-gray-500 dark:text-gray-400 text-xl font-bold">Tidak ada data absensi</p>
                 <p className="text-gray-400 dark:text-gray-500 text-sm">Coba ubah filter atau rentang tanggal</p>
@@ -464,14 +515,12 @@ export default function LaporanPage() {
                             isOngoing ? "bg-emerald-50/40 dark:bg-emerald-950/20" : ""
                           }`}
                         >
-                          {/* No */}
                           <td className="px-5 py-4 text-center">
                             <span className="w-8 h-8 rounded-xl bg-gradient-to-br from-indigo-100 to-purple-100 dark:from-indigo-900/40 dark:to-purple-900/40 flex items-center justify-center text-sm font-black text-indigo-600 dark:text-indigo-400 mx-auto">
                               {(safePage - 1) * PAGE_SIZE + i + 1}
                             </span>
                           </td>
 
-                          {/* Karyawan */}
                           <td className="px-5 py-4">
                             <div className="flex items-center gap-3">
                               <div className="relative flex-shrink-0">
@@ -491,7 +540,6 @@ export default function LaporanPage() {
                             </div>
                           </td>
 
-                          {/* Metode */}
                           <td className="px-5 py-4">
                             <span
                               className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold ${
@@ -505,7 +553,6 @@ export default function LaporanPage() {
                             </span>
                           </td>
 
-                          {/* Tanggal */}
                           <td className="px-5 py-4">
                             <div className="flex items-center gap-1.5 text-sm text-gray-700 dark:text-gray-300 whitespace-nowrap">
                               <CalendarCheck className="w-3.5 h-3.5 text-indigo-400 flex-shrink-0" />
@@ -515,7 +562,6 @@ export default function LaporanPage() {
                             </div>
                           </td>
 
-                          {/* Absen Masuk */}
                           <td className="px-5 py-4">
                             <div className="flex flex-col gap-0.5">
                               <div className="flex items-center gap-1.5">
@@ -532,7 +578,6 @@ export default function LaporanPage() {
                             </div>
                           </td>
 
-                          {/* Absen Pulang */}
                           <td className="px-5 py-4">
                             {att.clockOut ? (
                               <div className="flex flex-col gap-0.5">
@@ -560,12 +605,10 @@ export default function LaporanPage() {
                             )}
                           </td>
 
-                          {/* Durasi */}
                           <td className="px-5 py-4">
                             <LiveDuration clockIn={clockInVal} clockOut={att.clockOut} />
                           </td>
 
-                          {/* Foto */}
                           <td className="px-5 py-4">
                             {att.method === "selfie" && att.photoUrl ? (
                               <button
@@ -597,7 +640,6 @@ export default function LaporanPage() {
                             )}
                           </td>
 
-                          {/* Lokasi */}
                           <td className="px-5 py-4">
                             {att.location ? (
                               <a
@@ -657,10 +699,21 @@ export default function LaporanPage() {
                   >
                     <ChevronLeft className="w-5 h-5 text-gray-600 dark:text-gray-300" />
                   </button>
-                  {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
-                    const start = Math.max(1, Math.min(safePage - 2, totalPages - 4));
-                    const p = start + i;
-                    return (
+                  {(() => {
+                    const pages = [];
+                    const maxVisible = 5;
+                    let startPage = Math.max(1, safePage - Math.floor(maxVisible / 2));
+                    const endPage = Math.min(totalPages, startPage + maxVisible - 1);
+                    
+                    if (endPage - startPage + 1 < maxVisible) {
+                      startPage = Math.max(1, endPage - maxVisible + 1);
+                    }
+                    
+                    for (let p = startPage; p <= endPage; p++) {
+                      pages.push(p);
+                    }
+                    
+                    return pages.map((p) => (
                       <button
                         key={p}
                         type="button"
@@ -673,8 +726,8 @@ export default function LaporanPage() {
                       >
                         {p}
                       </button>
-                    );
-                  })}
+                    ));
+                  })()}
                   <button
                     type="button"
                     onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
@@ -710,6 +763,6 @@ export default function LaporanPage() {
           </motion.div>
         </div>
       </div>
-    </>
+    </div>
   );
 }

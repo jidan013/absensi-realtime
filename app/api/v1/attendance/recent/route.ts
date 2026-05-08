@@ -8,19 +8,57 @@ export async function GET(req: NextRequest) {
     const userAccess = await requireAuth();
     if (userAccess instanceof NextResponse) return userAccess;
 
-    // Get recent attendance records (last 30 days)
+    //  ONLY ADMIN CAN ACCESS
+    if (userAccess.role !== "ADMIN") {
+      return NextResponse.json(
+        { 
+          success: false, 
+          error: "Unauthorized: Admin access required",
+          message: "Anda tidak memiliki akses ke data ini"
+        },
+        { status: 403 }
+      );
+    }
+
+    // Get query params for pagination (optional)
+    const { searchParams } = new URL(req.url);
+    const limit = Math.min(parseInt(searchParams.get("limit") || "50"), 100);
+    const page = parseInt(searchParams.get("page") || "1");
+    const skip = (page - 1) * limit;
+
+    // Get date range (last 30 days by default)
     const thirtyDaysAgo = new Date();
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+    
+    const startDate = searchParams.get("startDate") 
+      ? new Date(searchParams.get("startDate")!) 
+      : thirtyDaysAgo;
+    const endDate = searchParams.get("endDate") 
+      ? new Date(searchParams.get("endDate")!) 
+      : new Date();
 
+    // Get total count for pagination
+    const totalCount = await db.attendance.count({
+      where: {
+        clockIn: {
+          gte: startDate,
+          lte: endDate,
+        },
+      },
+    });
+
+    // Get attendance records
     const attendances = await db.attendance.findMany({
       where: {
         clockIn: {
-          gte: thirtyDaysAgo,
+          gte: startDate,
+          lte: endDate,
         },
       },
       include: {
         user: {
           select: {
+            id: true,
             name: true,
             email: true,
             position: true,
@@ -32,7 +70,8 @@ export async function GET(req: NextRequest) {
       orderBy: {
         clockIn: "desc",
       },
-      take: 50, // Limit to 50 records for performance
+      skip,
+      take: limit,
     });
 
     // Map data with status calculation
@@ -45,33 +84,51 @@ export async function GET(req: NextRequest) {
         const hours = clockInTime.getHours();
         const minutes = clockInTime.getMinutes();
         
-        // Assume office hours start at 8:00 AM
-        if (hours > 8 || (hours === 8 && minutes > 0)) {
+        // Office hours start at 8:00 AM (can be configured)
+        const OFFICE_START_HOUR = 8;
+        const OFFICE_START_MINUTE = 0;
+        
+        if (hours > OFFICE_START_HOUR || 
+            (hours === OFFICE_START_HOUR && minutes > OFFICE_START_MINUTE)) {
           status = "late";
-        } else if (hours < 8) {
+        } else if (hours < OFFICE_START_HOUR) {
           status = "on_time";
         } else {
           status = "present";
         }
       }
 
-      // Determine method from QR code or default
+      // Determine method from QR code
       let method: "QR" | "FACE" | "MANUAL" = "MANUAL";
       if (attendance.qrCode) {
-        method = attendance.qrCode.code.includes("FACE") ? "FACE" : "QR";
+        if (attendance.qrCode.code.includes("FACE")) {
+          method = "FACE";
+        } else if (attendance.qrCode.code.includes("QR")) {
+          method = "QR";
+        }
       }
+
+      // Get device info from location or default
+      const device = attendance.location?.address || null;
 
       return {
         id: attendance.id,
         user: {
+          id: attendance.user.id,
           name: attendance.user.name,
           email: attendance.user.email,
           position: attendance.user.position,
         },
-        clockIn: attendance.clockIn?.toISOString() || new Date().toISOString(),
+        clockIn: attendance.clockIn?.toISOString() || null,
         clockOut: attendance.clockOut?.toISOString() || null,
         status,
         method,
+        device,
+        location: attendance.location ? {
+          latitude: attendance.location.latitude,
+          longitude: attendance.location.longitude,
+          address: attendance.location.address,
+        } : null,
         createdAt: attendance.createdAt.toISOString(),
       };
     });
@@ -79,11 +136,25 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({
       success: true,
       data,
+      pagination: {
+        page,
+        limit,
+        total: totalCount,
+        totalPages: Math.ceil(totalCount / limit),
+      },
+      filters: {
+        startDate: startDate.toISOString(),
+        endDate: endDate.toISOString(),
+      },
     });
   } catch (error) {
     console.error("Failed to fetch attendance records:", error);
     return NextResponse.json(
-      { success: false, error: "Failed to fetch attendance records" },
+      { 
+        success: false, 
+        error: "Failed to fetch attendance records",
+        message: "Terjadi kesalahan saat mengambil data absensi"
+      },
       { status: 500 }
     );
   }

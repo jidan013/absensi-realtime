@@ -26,6 +26,7 @@ import {
   Cloud,
   Database,
   RefreshCw,
+  Eye,
 } from "lucide-react";
 import { DarkModeContext } from "@/components/home/dark-mode";
 import { useUser } from "@/providers/auth-provider";
@@ -455,9 +456,42 @@ function Footer() {
   );
 }
 
+// === ADMIN ONLY DATA TABLE SECTION ===
+function AdminDataSection() {
+  return (
+    <section className="py-20 px-4 sm:px-6 lg:px-8 bg-gradient-to-b from-slate-900 to-slate-950">
+      <div className="max-w-7xl mx-auto">
+        <motion.div
+          initial={{ opacity: 0, y: 30 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true }}
+          className="text-center mb-12"
+        >
+          <div className="inline-flex items-center gap-2 bg-cyan-500/10 border border-cyan-500/20 rounded-full px-4 py-1.5 mb-4">
+            <Shield className="w-4 h-4 text-cyan-400" />
+            <span className="text-xs text-cyan-400 font-medium">ADMIN ACCESS</span>
+          </div>
+          <h2 className="text-3xl md:text-5xl font-bold text-white mb-4">
+            Data Absensi{" "}
+            <span className="text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-blue-400">
+              Seluruh Karyawan
+            </span>
+          </h2>
+          <p className="text-gray-400 max-w-2xl mx-auto">
+            Pantau kehadiran seluruh karyawan secara real-time
+          </p>
+        </motion.div>
+        <div className="bg-gradient-to-br from-slate-800/50 to-slate-900/50 backdrop-blur-sm rounded-2xl p-6 border border-white/10">
+          <DataTableDemo />
+        </div>
+      </div>
+    </section>
+  );
+}
+
 // === MAIN COMPONENT ===
 export default function HomeClient() {
-  const { isAuthenticated } = useUser();
+  const { isAuthenticated, user } = useUser();
   const { data: attendanceStatus, refetch: refetchStatus } = useAttendanceStatus();
   const [dashboardStats, setDashboardStats] = useState<DashboardStats>({
     totalUsers: 0,
@@ -469,6 +503,9 @@ export default function HomeClient() {
   const [openFaq, setOpenFaq] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+
+  // Check if user is admin
+  const isAdmin = user?.role === "ADMIN" || user?.role === "admin";
 
   // Fetch real data from API
   const fetchDashboardStats = useCallback(async () => {
@@ -502,7 +539,6 @@ export default function HomeClient() {
   // Auto refresh when attendance status changes
   useEffect(() => {
     if (attendanceStatus) {
-      // Refresh stats when attendance status changes (someone clocked in/out)
       fetchDashboardStats();
     }
   }, [attendanceStatus, fetchDashboardStats]);
@@ -533,30 +569,33 @@ export default function HomeClient() {
       <StatsSection stats={dashboardStats} onRefresh={handleRefresh} />
       <FeaturesSection />
       
-      {/* Data Table Section */}
-      <section className="py-20 px-4 sm:px-6 lg:px-8 bg-gradient-to-b from-slate-900 to-slate-950">
-        <div className="max-w-7xl mx-auto">
-          <motion.div
-            initial={{ opacity: 0, y: 30 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true }}
-            className="text-center mb-12"
-          >
-            <h2 className="text-3xl md:text-5xl font-bold text-white mb-4">
-              Data Absensi{" "}
-              <span className="text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-blue-400">
-                Real-time
-              </span>
-            </h2>
-            <p className="text-gray-400 max-w-2xl mx-auto">
-              Total {dashboardStats.totalAttendance.toLocaleString()} kehadiran tercatat
-            </p>
-          </motion.div>
-          <div className="bg-gradient-to-br from-slate-800/50 to-slate-900/50 backdrop-blur-sm rounded-2xl p-6 border border-white/10">
-            <DataTableDemo />
+      {/* ✅ Data Table Section - ONLY FOR ADMIN */}
+      {isAdmin && <AdminDataSection />}
+      
+      {/* Optional: Message for non-admin users */}
+      {!isAdmin && isAuthenticated && (
+        <section className="py-20 px-4 sm:px-6 lg:px-8 bg-gradient-to-b from-slate-900 to-slate-950">
+          <div className="max-w-7xl mx-auto text-center">
+            <motion.div
+              initial={{ opacity: 0, y: 30 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true }}
+              className="bg-gradient-to-br from-slate-800/50 to-slate-900/50 backdrop-blur-sm rounded-2xl p-12 border border-white/10"
+            >
+              <div className="inline-flex items-center justify-center w-16 h-16 bg-cyan-500/10 rounded-2xl mb-4 mx-auto">
+                <Eye className="w-8 h-8 text-cyan-400" />
+              </div>
+              <h3 className="text-2xl font-bold text-white mb-2">
+                Data Absensi Karyawan
+              </h3>
+              <p className="text-gray-400 max-w-md mx-auto">
+                Halaman data absensi hanya dapat diakses oleh administrator. 
+                Silakan hubungi admin jika Anda memerlukan akses.
+              </p>
+            </motion.div>
           </div>
-        </div>
-      </section>
+        </section>
+      )}
 
       <TestimonialsSection />
       <FAQSection openFaq={openFaq} setOpenFaq={setOpenFaq} />
