@@ -2,8 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/auth";
 import db from "@/lib/db";
 
-// Laptop polling endpoint: cek apakah user sudah absen hari ini
-// GET /api/v1/attendance/qr-status?token=ABSEN-xxx
 export async function GET(req: NextRequest) {
   try {
     const userAccess = await requireAuth();

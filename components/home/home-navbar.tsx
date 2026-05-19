@@ -21,18 +21,16 @@ import { useUser } from "@/providers/auth-provider";
 
 export default function Navbar() {
   const router = useRouter();
+  const { user: authUser, isAuthenticated } = useUser();
+  // ✅ Hapus refetchUser — AuthProvider sudah handle sync otomatis
 
-  const { user: authUser, refetchUser, isAuthenticated } = useUser();
   const email = authUser?.email ?? null;
   const role = authUser?.role ?? "EMPLOYEE";
 
   const [message, setMessage] = useState<{
     type: "success" | "error" | "";
     text: string;
-  }>({
-    type: "",
-    text: "",
-  });
+  }>({ type: "", text: "" });
   const [loading, setLoading] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
@@ -42,74 +40,24 @@ export default function Navbar() {
     throw new Error("Navbar harus dibungkus dalam <DarkModeProvider />");
   const { darkMode, setDarkMode } = darkModeContext;
 
-  // ✅ Refresh user data function
-  const refreshUser = async () => {
-    console.log("🔄 Navbar: Refreshing user...");
-    await refetchUser();
-  };
+  // ✅ HAPUS SELURUH useEffect listener & interval — sudah ada di AuthProvider
 
-  // ✅ Listen untuk sync event
-  useEffect(() => {
-    // Handler untuk sync event
-    const handleSync = () => {
-      console.log("🔄 Navbar: Syncing user data...");
-      refreshUser();
-    };
-
-    // Handler untuk storage change
-    const handleStorageChange = (e: StorageEvent) => {
-      if (e.key === "attendance_sync") {
-        console.log("📦 Navbar: Storage event detected");
-        refreshUser();
-      }
-    };
-
-    // Register event listeners
-    window.addEventListener("attendance-sync", handleSync);
-    window.addEventListener("storage", handleStorageChange);
-
-    // Auto refresh setiap 15 detik
-    const interval = setInterval(() => {
-      refreshUser();
-    }, 15000);
-
-    return () => {
-      window.removeEventListener("attendance-sync", handleSync);
-      window.removeEventListener("storage", handleStorageChange);
-      clearInterval(interval);
-    };
-  }, [refetchUser]);
-
-  // ✅ logout via API
   const handleLogout = async () => {
     setLoading(true);
-
     try {
       await fetch("/api/v1/auth/logout", {
         method: "POST",
         credentials: "include",
       });
-      
-      // Broadcast ke device lain
+
+      // ✅ Broadcast logout ke tab/device lain
       if (typeof window !== "undefined" && "BroadcastChannel" in window) {
         const channel = new BroadcastChannel("attendance-sync");
         channel.postMessage({ type: "LOGOUT", timestamp: Date.now() });
         channel.close();
       }
-      
-      // Hapus semua cookie
-      document.cookie.split(";").forEach(function(c) {
-        document.cookie = c.replace(/^ +/, "").replace(/=.*/, "=;expires=" + new Date().toUTCString() + ";path=/");
-      });
-      
-      // Trigger storage event
-      localStorage.setItem("attendance_sync", JSON.stringify({ type: "LOGOUT", timestamp: Date.now() }));
-      setTimeout(() => localStorage.removeItem("attendance_sync"), 100);
-      
-      setMessage({
-        type: "success",
-        text: "Berhasil logout! Mengarahkan ke login...",
-      });
+
+      setMessage({ type: "success", text: "Berhasil logout! Mengarahkan ke login..." });
 
       setTimeout(() => {
         setLoading(false);
@@ -121,10 +69,7 @@ export default function Navbar() {
     } catch (err) {
       console.error("Logout error:", err);
       setLoading(false);
-      setMessage({
-        type: "error",
-        text: "Gagal logout, coba lagi",
-      });
+      setMessage({ type: "error", text: "Gagal logout, coba lagi" });
     }
   };
 

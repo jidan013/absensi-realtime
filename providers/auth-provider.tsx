@@ -2,7 +2,7 @@
 
 import { UserAuth } from "@/types/auth";
 import axios, { AxiosError } from "axios";
-import { createContext, useContext, ReactNode, useEffect } from "react";
+import { createContext, useContext, ReactNode, useEffect, useRef } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 type AuthContextType = {
@@ -22,13 +22,17 @@ const fetchUserMe = async (): Promise<UserAuth | null> => {
     return res.data?.data ?? res.data?.user ?? null;
   } catch (err) {
     const error = err as AxiosError;
+    // 401 = belum login, bukan error — return null saja
     if (error.response?.status === 401) return null;
+    // 403, 500, dll — lempar supaya React Query bisa retry/handle
     throw err;
   }
 };
 
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const queryClient = useQueryClient();
+  // ✅ Guard supaya tidak spam refresh
+  const isRefreshing = useRef(false);
 
   const {
     data: user = null,
@@ -45,65 +49,71 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     refetchOnReconnect: true,
   });
 
-  // ✅ Function untuk refresh user
   const refreshUserData = async () => {
-    console.log("🔄 AuthProvider: Refreshing user data...");
-    await queryClient.invalidateQueries({ queryKey: ["auth", "me"] });
-    refetch();
+    // ✅ Hindari concurrent refresh
+    if (isRefreshing.current) return;
+    isRefreshing.current = true;
+    try {
+      await queryClient.invalidateQueries({ queryKey: ["auth", "me"] });
+      await refetch();
+    } finally {
+      isRefreshing.current = false;
+    }
   };
 
-  // ✅ Handle attendance sync (dengan type yang benar)
   useEffect(() => {
-    // Handler untuk custom event
     const handleAttendanceSync = (event: Event) => {
       const customEvent = event as CustomEvent;
-      console.log("🔄 AuthProvider: Attendance sync event received", customEvent.detail);
+      console.log("🔄 Attendance sync event", customEvent.detail);
       refreshUserData();
     };
 
-    // Handler untuk storage change
     const handleStorageChange = (e: StorageEvent) => {
-      if (e.key === "attendance_sync" || e.key === "access_token" || e.key === "absensi_session") {
-        console.log("🔄 AuthProvider: Storage event detected", e.key);
+      if (
+        e.key === "attendance_sync" ||
+        e.key === "access_token" ||
+        e.key === "absensi_session"
+      ) {
+        console.log("🔄 Storage event:", e.key);
         refreshUserData();
       }
     };
 
-    // Handler untuk visibility change
     const handleVisibilityChange = () => {
       if (document.visibilityState === "visible") {
-        console.log("🔄 AuthProvider: Tab became visible, refreshing...");
         refreshUserData();
       }
     };
 
-    // Handler untuk online event
     const handleOnline = () => {
-      console.log("🔄 AuthProvider: Network online, refreshing...");
+      console.log("🔄 Network online, refreshing...");
       refreshUserData();
     };
 
-    // Broadcast channel untuk cross-tab/device
     let broadcastChannel: BroadcastChannel | null = null;
     if (typeof window !== "undefined" && "BroadcastChannel" in window) {
       broadcastChannel = new BroadcastChannel("attendance-sync");
       broadcastChannel.onmessage = (event) => {
-        console.log("📡 AuthProvider: Broadcast received", event.data);
-        if (event.data.type === "CLOCK_OUT" || event.data.type === "LOGOUT" || event.data.type === "SESSION_CHANGED") {
+        console.log("📡 Broadcast received", event.data);
+        if (
+          event.data.type === "CLOCK_OUT" ||
+          event.data.type === "LOGOUT" ||
+          event.data.type === "SESSION_CHANGED"
+        ) {
           refreshUserData();
         }
       };
     }
 
-    // Register event listeners
     window.addEventListener("attendance-sync", handleAttendanceSync);
     window.addEventListener("storage", handleStorageChange);
     document.addEventListener("visibilitychange", handleVisibilityChange);
     window.addEventListener("online", handleOnline);
 
-    // Polling setiap 30 detik (fallback)
+    // ✅ Polling hanya jika user sudah login (hindari spam 401)
     const interval = setInterval(() => {
-      refreshUserData();
+      const cached = queryClient.getQueryData<UserAuth | null>(["auth", "me"]);
+      if (cached) refreshUserData();
     }, 30000);
 
     return () => {
@@ -119,7 +129,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const isAuthenticated = !!user && user.userId !== undefined;
 
   return (
-    <AuthContext.Provider value={{ user, isLoading, refetchUser: refetch, isAuthenticated }}>
+    <AuthContext.Provider
+      value={{ user, isLoading, refetchUser: refetch, isAuthenticated }}
+    >
       {children}
     </AuthContext.Provider>
   );

@@ -2,19 +2,13 @@
 
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import {
-  Field,
-  FieldDescription,
-  FieldGroup,
-  FieldLabel,
-  FieldSeparator,
-} from "@/components/ui/field";
+import { FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Eye, EyeOff, User, Mail, Briefcase, Lock } from "lucide-react";
+import { registerFormSchema } from "@/lib/validation/auth";
 
 export default function RegisterForm({
   className,
@@ -46,21 +40,15 @@ export default function RegisterForm({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    // Validasi password match
-    if (form.password !== form.confirmPassword) {
-      setMessage({
-        type: "error",
-        text: "Password dan Confirm Password tidak cocok",
-      });
-      return;
-    }
-
-    // Validasi minimal password length
-    if (form.password.length < 6) {
-      setMessage({
-        type: "error",
-        text: "Password minimal 6 karakter",
-      });
+    
+    const validation = registerFormSchema.safeParse({
+      ...form,
+      role: "EMPLOYEE",
+    });
+    if (!validation.success) {
+      const errors = validation.error.flatten().fieldErrors;
+      const firstError = Object.values(errors).flat()[0];
+      setMessage({ type: "error", text: firstError || "Validasi gagal" });
       return;
     }
 
@@ -70,9 +58,7 @@ export default function RegisterForm({
     try {
       const res = await fetch("/api/v1/auth/register", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           name: form.name,
           email: form.email,
@@ -89,12 +75,9 @@ export default function RegisterForm({
           type: "error",
           text:
             data.message ||
-            Object.values(data.errors || {})
-              .flat()
-              .join(", ") ||
+            Object.values(data.errors || {}).flat().join(", ") ||
             "Registrasi gagal",
         });
-        setLoading(false);
         return;
       }
 
@@ -105,11 +88,8 @@ export default function RegisterForm({
 
       setTimeout(() => router.push("/login"), 1500);
     } catch (err) {
-      console.log(err);
-      setMessage({
-        type: "error",
-        text: "Terjadi kesalahan, coba lagi.",
-      });
+      console.error(err);
+      setMessage({ type: "error", text: "Terjadi kesalahan, coba lagi." });
     } finally {
       setLoading(false);
     }
@@ -212,7 +192,11 @@ export default function RegisterForm({
               type="button"
               onClick={() => setShowPassword(!showPassword)}
               className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors">
-              {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              {showPassword ? (
+                <EyeOff className="w-4 h-4" />
+              ) : (
+                <Eye className="w-4 h-4" />
+              )}
             </button>
           </div>
         </div>
@@ -237,14 +221,18 @@ export default function RegisterForm({
               type="button"
               onClick={() => setShowConfirmPassword(!showConfirmPassword)}
               className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors">
-              {showConfirmPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              {showConfirmPassword ? (
+                <EyeOff className="w-4 h-4" />
+              ) : (
+                <Eye className="w-4 h-4" />
+              )}
             </button>
           </div>
         </div>
 
         {/* Submit Button */}
-        <Button 
-          type="submit" 
+        <Button
+          type="submit"
           disabled={loading}
           className="w-full h-11 rounded-xl bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-700 hover:to-blue-600 text-white font-semibold shadow-lg hover:shadow-xl transition-all duration-300">
           {loading ? (

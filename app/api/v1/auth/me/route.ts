@@ -5,9 +5,12 @@ import db from "@/lib/db";
 
 export async function GET(req: NextRequest) {
   try {
-    // Ambil token dari cookie
     const token = req.cookies.get("access_token")?.value;
-    
+
+    // ✅ Debug log — hapus setelah fix
+    console.log("[/me] All cookies:", req.cookies.getAll());
+    console.log("[/me] access_token:", token ? "EXISTS" : "NOT FOUND");
+
     if (!token) {
       return NextResponse.json(
         { success: false, error: "Not authenticated" },
@@ -15,8 +18,11 @@ export async function GET(req: NextRequest) {
       );
     }
 
-    // Verify token
+    // ✅ verifyToken sudah handle expired — tidak perlu cek payload.exp manual
     const payload = verifyToken(token);
+
+    console.log("[/me] Token payload:", payload);
+
     if (!payload) {
       const response = NextResponse.json(
         { success: false, error: "Invalid or expired token" },
@@ -26,18 +32,6 @@ export async function GET(req: NextRequest) {
       return response;
     }
 
-    // Cek expiry
-    const now = Math.floor(Date.now() / 1000);
-    if (payload.exp && payload.exp < now) {
-      const response = NextResponse.json(
-        { success: false, error: "Token expired" },
-        { status: 401 }
-      );
-      response.cookies.delete("access_token");
-      return response;
-    }
-
-    // Get fresh user data from database (tanpa isActive)
     const user = await db.user.findUnique({
       where: { id: payload.userId },
       select: {
@@ -48,9 +42,10 @@ export async function GET(req: NextRequest) {
         position: true,
         createdAt: true,
         updatedAt: true,
-        // isActive: true, // ❌ Hapus karena tidak ada di schema
       },
     });
+
+    console.log("[/me] User from DB:", user ? user.email : "NOT FOUND");
 
     if (!user) {
       const response = NextResponse.json(
@@ -74,7 +69,7 @@ export async function GET(req: NextRequest) {
       },
     });
   } catch (error) {
-    console.error("Auth me error:", error);
+    console.error("[/me] Unexpected error:", error);
     return NextResponse.json(
       { success: false, error: "Internal server error" },
       { status: 500 }
