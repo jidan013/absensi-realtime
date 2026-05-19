@@ -6,6 +6,7 @@ import Navbar from "@/components/home/home-navbar";
 import Providers from "@/providers/providers";
 import { SyncManager } from "@/components/SyncManager";
 import { QueryProvider } from "@/providers/QueryProvider";
+import { GlobalTimer } from "@/components/GlobalTImer";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -39,6 +40,7 @@ export default function RootLayout({
             <main>
               <Navbar />
               {children}
+              <GlobalTimer />
             </main>
             </QueryProvider>
           </Providers>

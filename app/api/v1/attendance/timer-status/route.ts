@@ -1,4 +1,3 @@
-// app/api/v1/attendance/timer-status/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import db from "@/lib/db";
 
@@ -14,7 +13,6 @@ export async function GET(req: NextRequest) {
       );
     }
     
-    // Cari absensi hari ini yang belum clock out
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     

@@ -1,11 +1,12 @@
+// components/GlobalTimer.tsx
 "use client";
 
 import { useEffect, useState } from "react";
+import { Timer } from "lucide-react";
 
 export function GlobalTimer() {
   const [isClockedIn, setIsClockedIn] = useState(false);
   const [timerData, setTimerData] = useState<{
-    attendanceId: string;
     name: string;
     clockInTime: string;
   } | null>(null);
@@ -17,12 +18,7 @@ export function GlobalTimer() {
     return match ? match[1] : null;
   };
 
-  const getUserName = () => {
-    const match = document.cookie.match(/user_name=([^;]+)/);
-    return match ? decodeURIComponent(match[1]) : null;
-  };
-
-  // Ambil status timer dari server (pakai userId dari cookie)
+  // Ambil status timer dari server
   const fetchTimerStatus = async () => {
     const userId = getUserId();
     if (!userId) return;
@@ -33,13 +29,15 @@ export function GlobalTimer() {
       
       if (data.success && data.isClockedIn && data.data) {
         setIsClockedIn(true);
-        setTimerData(data.data);
+        setTimerData({
+          name: data.data.name,
+          clockInTime: data.data.clockInTime,
+        });
         const clockInTime = new Date(data.data.clockInTime).getTime();
         setDuration(Date.now() - clockInTime);
       } else {
         setIsClockedIn(false);
         setTimerData(null);
-        setDuration(0);
       }
     } catch (error) {
       console.error("Failed to fetch timer:", error);
@@ -72,15 +70,21 @@ export function GlobalTimer() {
   const seconds = Math.floor((duration % 60000) / 1000);
 
   return (
-    <div className="fixed bottom-4 right-4 bg-gradient-to-r from-emerald-500 to-teal-500 text-white rounded-2xl shadow-2xl p-4 z-50 cursor-pointer hover:scale-105 transition-transform">
-      <div className="flex items-center gap-3">
-        <div className="w-2 h-2 bg-white rounded-full animate-pulse" />
-        <div>
-          <p className="text-xs opacity-80">Sedang Bekerja</p>
-          <p className="text-lg font-bold font-mono">
-            {String(hours).padStart(2, "0")}:{String(minutes).padStart(2, "0")}:{String(seconds).padStart(2, "0")}
-          </p>
-          <p className="text-xs opacity-80">{timerData.name}</p>
+    <div className="fixed bottom-6 right-6 z-50">
+      <div className="bg-gradient-to-r from-emerald-500 to-teal-500 text-white rounded-2xl shadow-2xl p-4 cursor-pointer hover:scale-105 transition-transform duration-300">
+        <div className="flex items-center gap-3">
+          <div className="relative">
+            <div className="w-2 h-2 bg-white rounded-full absolute -top-1 -right-1 animate-ping" />
+            <div className="w-2 h-2 bg-white rounded-full absolute -top-1 -right-1 animate-pulse" />
+            <Timer className="w-8 h-8" />
+          </div>
+          <div>
+            <p className="text-xs opacity-80 font-medium">Sedang Bekerja</p>
+            <p className="text-2xl font-bold font-mono tracking-wider">
+              {String(hours).padStart(2, "0")}:{String(minutes).padStart(2, "0")}:{String(seconds).padStart(2, "0")}
+            </p>
+            <p className="text-xs opacity-80 mt-0.5">{timerData.name}</p>
+          </div>
         </div>
       </div>
     </div>
