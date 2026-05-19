@@ -1,3 +1,4 @@
+// app/absensi/page.tsx - AbsensiClient (perbaikan full)
 "use client";
 
 import { motion, AnimatePresence } from "framer-motion";
@@ -450,9 +451,34 @@ export default function AbsensiClient() {
     return false;
   }, []);
 
+  // ── Cek status berdasarkan email (tanpa perlu cookie user_id) ──────
+  const checkStatusByEmail = useCallback(async (): Promise<boolean> => {
+    if (!user?.email) return false;
+    
+    try {
+      const res = await fetch(`/api/v1/attendance/status-by-email?email=${encodeURIComponent(user.email)}`);
+      const data = await res.json();
+      
+      if (data.success && data.isClockedIn && data.data) {
+        const restoredSession: CheckInSession = {
+          attendanceId: data.data.attendanceId,
+          name: data.data.name,
+          checkInTime: new Date(data.data.clockInTime).getTime(),
+        };
+        setCheckInSession(restoredSession);
+        setAppStep("checked-in");
+        return true;
+      }
+    } catch (error) {
+      console.error("Failed to check status by email:", error);
+    }
+    return false;
+  }, [user]);
+
   // ── 1. Hydrate session dari server (cookie HttpOnly) ──────────────
   const fetchSession = useCallback(async (): Promise<void> => {
     try {
+      // Cek dari cookie session dulu
       const res = await fetch("/api/v1/attendance/session", {
         method: "GET",
         credentials: "include",
@@ -467,22 +493,37 @@ export default function AbsensiClient() {
         }
       }
       
-      // Jika tidak ada session di cookie, coba restore dari database
-      const restored = await restoreSessionFromDatabase();
+      // Jika tidak ada session di cookie, cek dari database via email
+      const restored = await checkStatusByEmail();
       if (!restored) {
-        setAppStep("form");
+        // Juga coba restore dari database via user_id cookie (fallback)
+        const restoredFromUserId = await restoreSessionFromDatabase();
+        if (!restoredFromUserId) {
+          setAppStep("form");
+        }
       }
-    } catch {
-      const restored = await restoreSessionFromDatabase();
+    } catch (error) {
+      console.error("Fetch session error:", error);
+      const restored = await checkStatusByEmail();
       if (!restored) {
-        setAppStep("form");
+        const restoredFromUserId = await restoreSessionFromDatabase();
+        if (!restoredFromUserId) {
+          setAppStep("form");
+        }
       }
     }
-  }, [restoreSessionFromDatabase]);
+  }, [checkStatusByEmail, restoreSessionFromDatabase]);
 
   useEffect(() => {
     fetchSession();
   }, [fetchSession]);
+
+  // ── Panggil saat user berubah (login ulang) ──────────────────────
+  useEffect(() => {
+    if (user?.email) {
+      checkStatusByEmail();
+    }
+  }, [user, checkStatusByEmail]);
 
   // ── 2. Init nama dari user ──
   useEffect(() => {

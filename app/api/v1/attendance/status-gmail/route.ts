@@ -4,12 +4,25 @@ import db from "@/lib/db";
 export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
-    const userId = searchParams.get("userId");
+    const email = searchParams.get("email");
     
-    if (!userId) {
+    if (!email) {
       return NextResponse.json(
-        { success: false, error: "User ID required" },
+        { success: false, error: "Email required" },
         { status: 400 }
+      );
+    }
+    
+    // Cari user berdasarkan email
+    const user = await db.user.findUnique({
+      where: { email },
+      select: { id: true, name: true }
+    });
+    
+    if (!user) {
+      return NextResponse.json(
+        { success: false, error: "User not found" },
+        { status: 404 }
       );
     }
     
@@ -19,39 +32,28 @@ export async function GET(req: NextRequest) {
     
     const attendance = await db.attendance.findFirst({
       where: {
-        userId: userId,
+        userId: user.id,
         clockIn: { gte: today },
         clockOut: null,
       },
       select: {
         id: true,
         clockIn: true,
-        user: {
-          select: { name: true }
-        }
       },
       orderBy: { clockIn: "desc" },
     });
     
-    if (!attendance || !attendance.clockIn) {
-      return NextResponse.json({
-        success: true,
-        isClockedIn: false,
-        data: null,
-      });
-    }
-    
     return NextResponse.json({
       success: true,
-      isClockedIn: true,
-      data: {
+      isClockedIn: attendance !== null && attendance.clockIn !== null,
+      data: attendance ? {
         attendanceId: attendance.id,
-        name: attendance.user.name,
-        clockInTime: attendance.clockIn.toISOString(),
-      },
+        name: user.name,
+        clockInTime: attendance.clockIn?.toISOString(),
+      } : null,
     });
   } catch (error) {
-    console.error("Timer status error:", error);
+    console.error("Status by email error:", error);
     return NextResponse.json(
       { success: false, error: "Server error" },
       { status: 500 }
