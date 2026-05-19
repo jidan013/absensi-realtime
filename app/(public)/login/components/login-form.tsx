@@ -14,16 +14,22 @@ import {
   Eye,
   EyeOff,
   LogIn,
-  Github,
-  Chrome,
   ArrowRight,
   CheckCircle,
   AlertCircle,
 } from "lucide-react";
 
 type LoginResponse = {
+  success?: boolean;
   message?: string;
   errors?: Record<string, string[]>;
+  data?: {
+    userId: string;
+    name: string;
+    email: string;
+    role: string;
+    position: string;
+  };
 };
 
 export default function LoginForm({
@@ -94,7 +100,13 @@ export default function LoginForm({
         return;
       }
 
+      // ✅ Login success
       setMessage({ type: "success", text: data.message || "Login berhasil!" });
+
+      // ✅ Simpan user info ke localStorage jika perlu (optional)
+      if (data.data) {
+        localStorage.setItem("user", JSON.stringify(data.data));
+      }
 
       setTimeout(() => {
         router.replace(redirect);
@@ -276,41 +288,9 @@ export default function LoginForm({
                 </Button>
               </motion.div>
 
-              {/* Divider */}
-              {/* <div className="relative">
-                <div className="absolute inset-0 flex items-center">
-                  <div className="w-full border-t border-slate-200 dark:border-slate-700"></div>
-                </div>
-                <div className="relative flex justify-center text-xs uppercase">
-                  <span className="bg-white dark:bg-slate-900 px-2 text-slate-500">
-                    Or continue with
-                  </span>
-                </div>
-              </div> */}
-
-              {/* Social Login
-              <div className="grid grid-cols-2 gap-3">
-                <Button
-                  type="button"
-                  variant="outline"
-                  className="rounded-xl h-11 hover:bg-slate-50 dark:hover:bg-slate-800 transition-all"
-                >
-                  <Github className="w-4 h-4 mr-2" />
-                  GitHub
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  className="rounded-xl h-11 hover:bg-slate-50 dark:hover:bg-slate-800 transition-all"
-                >
-                  <Chrome className="w-4 h-4 mr-2" />
-                  Google
-                </Button>
-              </div> */}
-
               {/* Register Link */}
               <div className="text-center text-sm text-slate-600 dark:text-slate-400">
-                Dont have an account?{" "}
+                Don&apos;t have an account?{" "}
                 <Link
                   href="/register"
                   className="text-blue-600 hover:text-blue-700 dark:text-blue-400 font-semibold hover:underline transition-all"

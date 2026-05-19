@@ -23,14 +23,21 @@ const isProd = process.env.NODE_ENV === "production";
  *
  * sameSite "lax" di development (localhost tidak support "none" tanpa HTTPS)
  */
+// lib/auth.ts
 export const setAuthCookie = async (token: string): Promise<void> => {
   const cookieStore = await cookies();
+  
+
+  const isProd = process.env.NODE_ENV === "production";
+  const domain = isProd ? process.env.COOKIE_DOMAIN : undefined;
+  
   cookieStore.set("access_token", token, {
     httpOnly: true,
     secure: isProd,
     sameSite: isProd ? "none" : "lax",
     path: "/",
-    maxAge: 60 * 60 * 24 * 7, // 7 hari
+    maxAge: 60 * 60 * 24 * 7,
+    domain: domain, // Contoh: ".example.com" untuk subdomain
   });
 };
 
@@ -47,6 +54,8 @@ export const clearAuthCookie = async (): Promise<void> => {
     maxAge: 0,
   });
 };
+
+
 
 /**
  * 🔐 GENERATE TOKEN
