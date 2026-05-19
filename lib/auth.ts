@@ -1,3 +1,4 @@
+// lib/auth.ts
 import jwt from "jsonwebtoken";
 import { UserAuth } from "@/types/auth";
 import { cookies } from "next/headers";
@@ -23,21 +24,42 @@ const isProd = process.env.NODE_ENV === "production";
  *
  * sameSite "lax" di development (localhost tidak support "none" tanpa HTTPS)
  */
-// lib/auth.ts
 export const setAuthCookie = async (token: string): Promise<void> => {
   const cookieStore = await cookies();
   
-
-  const isProd = process.env.NODE_ENV === "production";
-  const domain = isProd ? process.env.COOKIE_DOMAIN : undefined;
+  const isProduction = process.env.NODE_ENV === "production";
+  const domain = isProduction ? process.env.COOKIE_DOMAIN : undefined;
   
   cookieStore.set("access_token", token, {
     httpOnly: true,
-    secure: isProd,
-    sameSite: isProd ? "none" : "lax",
+    secure: isProduction,
+    sameSite: isProduction ? "none" : "lax",
+    path: "/",
+    maxAge: 60 * 60 * 24 * 7, // 7 hari
+    domain: domain,
+  });
+};
+
+/**
+ * 🍪 SET SESSION COOKIE (non-httpOnly untuk frontend)
+ */
+export const setSessionCookie = async (data: {
+  userId: string;
+  name: string;
+  email: string;
+  role: string;
+}): Promise<void> => {
+  const cookieStore = await cookies();
+  const isProduction = process.env.NODE_ENV === "production";
+  const domain = isProduction ? process.env.COOKIE_DOMAIN : undefined;
+  
+  cookieStore.set("user_session", JSON.stringify(data), {
+    httpOnly: false,
+    secure: isProduction,
+    sameSite: isProduction ? "none" : "lax",
     path: "/",
     maxAge: 60 * 60 * 24 * 7,
-    domain: domain, // Contoh: ".example.com" untuk subdomain
+    domain: domain,
   });
 };
 
@@ -46,22 +68,53 @@ export const setAuthCookie = async (token: string): Promise<void> => {
  */
 export const clearAuthCookie = async (): Promise<void> => {
   const cookieStore = await cookies();
+  const isProduction = process.env.NODE_ENV === "production";
+  const domain = isProduction ? process.env.COOKIE_DOMAIN : undefined;
+  
   cookieStore.set("access_token", "", {
     httpOnly: true,
-    secure: isProd,
-    sameSite: isProd ? "none" : "lax",
+    secure: isProduction,
+    sameSite: isProduction ? "none" : "lax",
     path: "/",
     maxAge: 0,
+    domain: domain,
+  });
+  
+  // Juga hapus session cookie
+  cookieStore.set("user_session", "", {
+    httpOnly: false,
+    secure: isProduction,
+    sameSite: isProduction ? "none" : "lax",
+    path: "/",
+    maxAge: 0,
+    domain: domain,
   });
 };
 
-
+/**
+ * 🗑️ CLEAR ALL COOKIES
+ */
+export const clearAllCookies = async (): Promise<void> => {
+  const cookieStore = await cookies();
+  const isProduction = process.env.NODE_ENV === "production";
+  const domain = isProduction ? process.env.COOKIE_DOMAIN : undefined;
+  
+  const cookiesToClear = ["access_token", "user_session", "absensi_session"];
+  
+  for (const cookieName of cookiesToClear) {
+    cookieStore.set(cookieName, "", {
+      httpOnly: cookieName === "access_token",
+      secure: isProduction,
+      sameSite: isProduction ? "none" : "lax",
+      path: "/",
+      maxAge: 0,
+      domain: domain,
+    });
+  }
+};
 
 /**
  * 🔐 GENERATE TOKEN
- *
- * FIX: tidak lagi terima exp/iat dari luar — biarkan jwt.sign yang handle
- * supaya tidak ada konflik dua exp field di payload.
  */
 export const generateToken = (
   payload: Omit<UserAuth, "exp" | "iat">
@@ -74,9 +127,6 @@ export const generateToken = (
 
 /**
  * 🔍 VERIFY TOKEN
- *
- * FIX: return type eksplisit, tidak cast langsung — pastikan payload ada
- * sebelum akses field apapun.
  */
 export const verifyToken = (token: string): UserAuth | null => {
   try {
@@ -84,7 +134,6 @@ export const verifyToken = (token: string): UserAuth | null => {
       algorithms: ["HS256"],
     });
 
-    // FIX: pastikan decoded bukan string (edge case jwt.verify)
     if (!decoded || typeof decoded === "string") return null;
 
     return decoded as UserAuth;
@@ -96,8 +145,6 @@ export const verifyToken = (token: string): UserAuth | null => {
 
 /**
  * 🧠 GET CURRENT USER
- *
- * FIX: cek payload null sebelum akses .exp
  */
 export const getCurrentUser = async (): Promise<UserAuth | null> => {
   try {
@@ -107,11 +154,9 @@ export const getCurrentUser = async (): Promise<UserAuth | null> => {
     if (!token) return null;
 
     const payload = verifyToken(token);
-
-    // FIX: null check sebelum akses payload.exp
     if (!payload) return null;
 
-    // Cek expiry manual (defence in depth)
+    // Cek expiry manual
     const now = Math.floor(Date.now() / 1000);
     if (payload.exp && payload.exp < now) {
       console.log("⛔ Token expired");
@@ -150,6 +195,9 @@ export const requireAuth = async (): Promise<UserAuth> => {
   return user;
 };
 
+/**
+ * 🔐 REQUIRE ROLE
+ */
 export const requireRole = async (allowedRoles: string[]): Promise<UserAuth> => {
   const user = await requireAuth();
   if (!allowedRoles.includes(user.role)) throw new Error("Forbidden");
@@ -165,13 +213,17 @@ export const requireAuthOrNull = async (): Promise<UserAuth | NextResponse> => {
   return user;
 };
 
+/**
+ * 🌐 SERVER GUARD WITH ROLE
+ */
 export const requireRoleOrNull = async (
   allowedRoles: string[]
 ): Promise<UserAuth | NextResponse> => {
   const user = await getCurrentUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  if (!allowedRoles.includes(user.role))
+  if (!allowedRoles.includes(user.role)) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
   return user;
 };
 
@@ -187,4 +239,52 @@ export const verifyPassword = async (
   hashedPassword: string
 ): Promise<boolean> => {
   return bcrypt.compare(password, hashedPassword);
+};
+
+/**
+ * 📝 GET USER FROM SESSION COOKIE (Frontend helper)
+ */
+export const getUserFromSessionCookie = async (): Promise<{
+  userId: string;
+  name: string;
+  email: string;
+  role: string;
+} | null> => {
+  try {
+    const cookieStore = await cookies();
+    const sessionCookie = cookieStore.get("user_session")?.value;
+    
+    if (!sessionCookie) return null;
+    
+    return JSON.parse(sessionCookie);
+  } catch (error) {
+    console.error("Error parsing session cookie:", error);
+    return null;
+  }
+};
+
+/**
+ * 🔄 REFRESH TOKEN
+ */
+export const refreshToken = async (): Promise<string | null> => {
+  try {
+    const user = await getCurrentUser();
+    if (!user) return null;
+    
+    const newToken = generateToken({
+      userId: user.userId,
+      roleId: user.roleId,
+      name: user.name,
+      email: user.email,
+      role: user.role,
+      createdAt: user.createdAt,
+      lastLogin: new Date().toISOString(),
+    });
+    
+    await setAuthCookie(newToken);
+    return newToken;
+  } catch (error) {
+    console.error("Token refresh error:", error);
+    return null;
+  }
 };
