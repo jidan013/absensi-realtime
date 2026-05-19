@@ -1,4 +1,3 @@
-// app/api/v1/auth/me/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import { verifyToken } from "@/lib/auth";
 import db from "@/lib/db";
@@ -7,25 +6,24 @@ export async function GET(req: NextRequest) {
   try {
     const token = req.cookies.get("access_token")?.value;
 
-    // ✅ Debug log — hapus setelah fix
-    console.log("[/me] All cookies:", req.cookies.getAll());
-    console.log("[/me] access_token:", token ? "EXISTS" : "NOT FOUND");
+    // Debug log (hapus di production)
+    if (process.env.NODE_ENV === "development") {
+      console.log("[/me] access_token:", token ? "EXISTS" : "NOT FOUND");
+    }
 
     if (!token) {
       return NextResponse.json(
-        { success: false, error: "Not authenticated" },
+        { success: false, error: "Not authenticated", code: "NO_TOKEN" },
         { status: 401 }
       );
     }
 
-    // ✅ verifyToken sudah handle expired — tidak perlu cek payload.exp manual
+    // Verify token (sudah handle expired)
     const payload = verifyToken(token);
-
-    console.log("[/me] Token payload:", payload);
 
     if (!payload) {
       const response = NextResponse.json(
-        { success: false, error: "Invalid or expired token" },
+        { success: false, error: "Invalid or expired token", code: "INVALID_TOKEN" },
         { status: 401 }
       );
       response.cookies.delete("access_token");
@@ -45,16 +43,30 @@ export async function GET(req: NextRequest) {
       },
     });
 
-    console.log("[/me] User from DB:", user ? user.email : "NOT FOUND");
-
     if (!user) {
       const response = NextResponse.json(
-        { success: false, error: "User not found" },
+        { success: false, error: "User not found", code: "USER_NOT_FOUND" },
         { status: 401 }
       );
       response.cookies.delete("access_token");
       return response;
     }
+
+    // ✅ Tambahkan data attendance status untuk timer
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
+    const todayAttendance = await db.attendance.findFirst({
+      where: {
+        userId: user.id,
+        clockIn: { gte: today },
+      },
+      select: {
+        id: true,
+        clockIn: true,
+        clockOut: true,
+      },
+    });
 
     return NextResponse.json({
       success: true,
@@ -66,12 +78,19 @@ export async function GET(req: NextRequest) {
         position: user.position,
         createdAt: user.createdAt,
         lastLogin: user.updatedAt,
+        // ✅ Timer info - tetap ada meskipun user logout!
+        attendance: {
+          isClockedIn: todayAttendance !== null && todayAttendance.clockOut === null,
+          clockInTime: todayAttendance?.clockIn || null,
+          clockOutTime: todayAttendance?.clockOut || null,
+          attendanceId: todayAttendance?.id || null,
+        },
       },
     });
   } catch (error) {
     console.error("[/me] Unexpected error:", error);
     return NextResponse.json(
-      { success: false, error: "Internal server error" },
+      { success: false, error: "Internal server error", code: "SERVER_ERROR" },
       { status: 500 }
     );
   }
