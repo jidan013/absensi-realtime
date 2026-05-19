@@ -277,7 +277,7 @@ export default function LoginForm({
               </motion.div>
 
               {/* Divider */}
-              <div className="relative">
+              {/* <div className="relative">
                 <div className="absolute inset-0 flex items-center">
                   <div className="w-full border-t border-slate-200 dark:border-slate-700"></div>
                 </div>
@@ -286,9 +286,9 @@ export default function LoginForm({
                     Or continue with
                   </span>
                 </div>
-              </div>
+              </div> */}
 
-              {/* Social Login */}
+              {/* Social Login
               <div className="grid grid-cols-2 gap-3">
                 <Button
                   type="button"
@@ -306,7 +306,7 @@ export default function LoginForm({
                   <Chrome className="w-4 h-4 mr-2" />
                   Google
                 </Button>
-              </div>
+              </div> */}
 
               {/* Register Link */}
               <div className="text-center text-sm text-slate-600 dark:text-slate-400">

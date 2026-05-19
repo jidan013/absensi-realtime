@@ -79,7 +79,6 @@ const faqs = [
   { question: "Apakah bisa terintegrasi dengan HRIS?", answer: "Ya. Dukung REST API, GraphQL, SAP, Oracle, dan Google Workspace untuk integrasi seamless." },
   { question: "Bagaimana keamanan data?", answer: "Enkripsi AES-256, zero-access data policy, audit rutin, dan compliant dengan GDPR & ISO 27001." },
   { question: "Ada dukungan teknis?", answer: "Chat & email support 24/7. Paket enterprise mendapatkan SLA dedicated dan onboarding assistance." },
-  { question: "Berapa lama implementasi?", answer: "Rata-rata implementasi hanya 1-3 hari untuk perusahaan skala menengah." },
 ];
 
 // === HERO SECTION ===
@@ -414,11 +413,11 @@ function CTASection({ isAuthenticated }: { isAuthenticated: boolean }) {
 function Footer() {
   return (
     <footer className="bg-slate-950 border-t border-slate-800 py-12 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-7xl mx-auto">
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8 mb-8">
+      <div className="container max-w-7xl mx-auto">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8 mb-8 place-items-center text-center lg:text-left">
           <div>
             <h3 className="text-2xl font-bold text-white mb-4">
-              RAD<span className="text-cyan-400">.</span>Absensi
+              RAD<span className="text-cyan-400">.</span>
             </h3>
             <p className="text-gray-500 text-sm leading-relaxed">
               Solusi absensi pintar berbasis AI untuk perusahaan modern.
@@ -427,19 +426,19 @@ function Footer() {
           <div>
             <h4 className="font-semibold text-white mb-4">Produk</h4>
             <ul className="space-y-2 text-sm text-gray-500">
+              <li><Link href="/" className="hover:text-cyan-400 transition">Home</Link></li>
               <li><Link href="/absensi" className="hover:text-cyan-400 transition">Absensi</Link></li>
-              <li><Link href="/laporan" className="hover:text-cyan-400 transition">Laporan</Link></li>
-              <li><Link href="/users" className="hover:text-cyan-400 transition">Manajemen User</Link></li>
+              <li><Link href="/kontak" className="hover:text-cyan-400 transition">Kontak</Link></li>
             </ul>
           </div>
-          <div>
+          {/* <div>
             <h4 className="font-semibold text-white mb-4">Perusahaan</h4>
             <ul className="space-y-2 text-sm text-gray-500">
               <li><Link href="/about" className="hover:text-cyan-400 transition">Tentang Kami</Link></li>
               <li><Link href="/contact" className="hover:text-cyan-400 transition">Kontak</Link></li>
               <li><Link href="/privacy" className="hover:text-cyan-400 transition">Privacy Policy</Link></li>
             </ul>
-          </div>
+          </div> */}
           <div>
             <h4 className="font-semibold text-white mb-4">Kontak</h4>
             <ul className="space-y-2 text-sm text-gray-500">

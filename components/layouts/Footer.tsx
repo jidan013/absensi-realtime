@@ -10,7 +10,7 @@ export default function FooterClient(){
           <div className="grid md:grid-cols-4 gap-12 mb-12">
             <div>
               <h2 className="text-3xl font-bold text-white mb-4">
-                <span className="text-transparent bg-clip-text bg-gradient-to-r from-cyan-300 to-blue-300">RAD</span> Absensi
+                <span className="text-transparent bg-clip-text bg-gradient-to-r from-cyan-300 to-blue-300">RAD</span> 
               </h2>
               <p className="text-sm leading-relaxed">Absen pake AI. Cepat, akurat, dan bikin hidup HR jadi lebih chill.</p>
             </div>
@@ -18,7 +18,7 @@ export default function FooterClient(){
               <h4 className="text-lg font-bold text-white mb-4">Navigasi</h4>
               <ul className="space-y-2 text-sm">
                 {["Home", "Absensi", "Kontak"].map((item) => (
-                  <li key={item}><Link href="#" className="hover:text-cyan-400 transition">→ {item}</Link></li>
+                  <li key={item}><Link href="/absensi" className="hover:text-cyan-400 transition">→ {item}</Link></li>
                 ))}
               </ul>
             </div>
@@ -39,7 +39,7 @@ export default function FooterClient(){
             </div>
           </div>
           <div className="border-t border-gray-800 pt-8 text-center text-sm">
-            <p>© {new Date().getFullYear()} RAD Absensi. All rights reserved.</p>
+            <p>© {new Date().getFullYear()} RAD. All rights reserved.</p>
           </div>
         </div>
       </footer>
