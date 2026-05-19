@@ -68,25 +68,25 @@ interface QRStatusResponse {
   error?: string;
 }
 
-/**
- * Session shape yang disimpan di cookie server-side.
- * Cookie: absensi_session (HttpOnly, SameSite=Strict)
- * Value : JSON.stringify(CheckInSession)
- *
- * Karena cookie HttpOnly tidak bisa dibaca JS, kita
- * fetch ke /api/v1/attendance/session GET untuk
- * mengambil data session yang sudah aktif.
- */
 interface CheckInSession {
   attendanceId: string;
   name: string;
-  checkInTime: number; // epoch ms
+  checkInTime: number;
 }
 
-/** Response dari GET /api/v1/attendance/session */
 interface SessionResponse {
   active: boolean;
   session?: CheckInSession;
+}
+
+interface TimerStatusResponse {
+  success: boolean;
+  isClockedIn: boolean;
+  data?: {
+    attendanceId: string;
+    name: string;
+    clockInTime: string;
+  };
 }
 
 type AbsenMode = "face" | "qr";
@@ -111,6 +111,11 @@ const formatTime = (ts: number): string =>
     minute: "2-digit",
     second: "2-digit",
   });
+
+const getUserIdFromCookie = (): string | null => {
+  const match = document.cookie.match(/user_id=([^;]+)/);
+  return match ? match[1] : null;
+};
 
 // ── Success Popup ─────────────────────────────────────────────────
 interface SuccessPopupProps {
@@ -388,7 +393,6 @@ export default function AbsensiClient() {
   const router = useRouter();
 
   const [mode, setMode] = useState<AbsenMode>("face");
-  // "loading" = sedang fetch session dari server
   const [appStep, setAppStep] = useState<AppStep>("loading");
   const [checkInSession, setCheckInSession] = useState<CheckInSession | null>(null);
   const [checkingOut, setCheckingOut] = useState<boolean>(false);
@@ -421,40 +425,70 @@ export default function AbsensiClient() {
 
   const { width, height } = useWindowSize();
 
+  // ── Restore session dari database (user_id cookie) ──────────────
+  const restoreSessionFromDatabase = useCallback(async (): Promise<boolean> => {
+    const userId = getUserIdFromCookie();
+    if (!userId) return false;
+    
+    try {
+      const res = await fetch(`/api/v1/attendance/timer-status?userId=${userId}`);
+      const data = await res.json() as TimerStatusResponse;
+      
+      if (data.success && data.isClockedIn && data.data) {
+        const restoredSession: CheckInSession = {
+          attendanceId: data.data.attendanceId,
+          name: data.data.name,
+          checkInTime: new Date(data.data.clockInTime).getTime(),
+        };
+        setCheckInSession(restoredSession);
+        setAppStep("checked-in");
+        return true;
+      }
+    } catch (error) {
+      console.error("Failed to restore session from database:", error);
+    }
+    return false;
+  }, []);
+
   // ── 1. Hydrate session dari server (cookie HttpOnly) ──────────────
-  // Dipanggil sekali saat mount, dan juga bisa dipanggil ulang.
-  // GET /api/v1/attendance/session → { active, session? }
   const fetchSession = useCallback(async (): Promise<void> => {
     try {
       const res = await fetch("/api/v1/attendance/session", {
         method: "GET",
-        credentials: "include", // kirim cookie HttpOnly
+        credentials: "include",
       });
-      if (!res.ok) {
-        setAppStep("form");
-        return;
+      
+      if (res.ok) {
+        const data = (await res.json()) as SessionResponse;
+        if (data.active && data.session) {
+          setCheckInSession(data.session);
+          setAppStep("checked-in");
+          return;
+        }
       }
-      const data = (await res.json()) as SessionResponse;
-      if (data.active && data.session) {
-        setCheckInSession(data.session);
-        setAppStep("checked-in");
-      } else {
+      
+      // Jika tidak ada session di cookie, coba restore dari database
+      const restored = await restoreSessionFromDatabase();
+      if (!restored) {
         setAppStep("form");
       }
     } catch {
-      setAppStep("form");
+      const restored = await restoreSessionFromDatabase();
+      if (!restored) {
+        setAppStep("form");
+      }
     }
-  }, []);
+  }, [restoreSessionFromDatabase]);
 
   useEffect(() => {
-    void fetchSession();
+    fetchSession();
   }, [fetchSession]);
 
   // ── 2. Init nama dari user ──
   useEffect(() => {
     if (appStep === "form") nameInputRef.current?.focus();
     if (user?.name && !name.trim()) setName(user.name);
-  }, [user, appStep]); // eslint-disable-line
+  }, [user, appStep]);
 
   // ── 3. Trigger success popup + redirect ──
   const triggerSuccessAndRedirect = useCallback(
@@ -474,14 +508,13 @@ export default function AbsensiClient() {
   );
 
   // ── 4. Checkout ──────────────────────────────────────────────────
-  // POST /api/v1/attendance/clockout
-  // Server harus: hapus cookie absensi_session setelah clock-out berhasil
   const handleCheckOut = useCallback(async (): Promise<void> => {
     if (!checkInSession) return;
     setCheckingOut(true);
     const checkOutTime = Date.now();
     const durationMs = checkOutTime - checkInSession.checkInTime;
     const durationStr = formatDuration(durationMs);
+    
     try {
       const res = await fetch("/api/v1/attendance/clockout", {
         method: "POST",
@@ -495,18 +528,18 @@ export default function AbsensiClient() {
           lon: geo.coords.lon,
         }),
       });
+      
       if (!res.ok) {
         const data = (await res.json()) as CheckoutResponse;
         throw new Error(data.error ?? "Gagal menyimpan absen pulang");
       }
-      // Cookie dihapus oleh server → reset state lokal
+      
       setCheckInSession(null);
       setAppStep("form");
       triggerSuccessAndRedirect("checkout", checkInSession.name, durationStr);
     } catch (err: unknown) {
       toast.error(
-        "Gagal absen pulang: " +
-          (err instanceof Error ? err.message : "Kesalahan tidak diketahui"),
+        "Gagal absen pulang: " + (err instanceof Error ? err.message : "Kesalahan tidak diketahui"),
         { duration: 6000 }
       );
     } finally {
@@ -644,7 +677,7 @@ export default function AbsensiClient() {
     const interval = setInterval(() => {
       setQrCountdown((prev) => {
         if (prev <= 1) {
-          void refreshQRToken();
+          refreshQRToken();
           toast.info("QR Code diperbarui otomatis.");
           return QR_REFRESH_INTERVAL;
         }
@@ -670,7 +703,7 @@ export default function AbsensiClient() {
         const data = (await res.json()) as QRStatusResponse;
 
         if (data.isExpired && !data.scanned) {
-          void refreshQRToken();
+          refreshQRToken();
           return;
         }
 
@@ -686,7 +719,6 @@ export default function AbsensiClient() {
             checkInTime,
           };
 
-          // Simpan session via server → server akan set cookie HttpOnly
           await fetch("/api/v1/attendance/session", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -718,11 +750,9 @@ export default function AbsensiClient() {
       setPhotoBlob(null);
       setPhotoURL("");
     }
-  }, [mode]); // eslint-disable-line
+  }, [mode]);
 
   // ── 12. Submit Face ──────────────────────────────────────────────
-  // POST /api/v1/attendance  (FormData)
-  // Server harus: setelah attendance dibuat, set cookie absensi_session
   const submitFace = useCallback(
     async (e?: FormEvent<HTMLFormElement>): Promise<void> => {
       e?.preventDefault?.();
@@ -768,7 +798,6 @@ export default function AbsensiClient() {
           checkInTime: Date.now(),
         };
 
-        // Simpan session di server → server set cookie HttpOnly absensi_session
         await fetch("/api/v1/attendance/session", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -783,8 +812,7 @@ export default function AbsensiClient() {
       } catch (err: unknown) {
         clearInterval(progressInterval);
         toast.error(
-          "Gagal mengirim: " +
-            (err instanceof Error ? err.message : "Kesalahan tidak diketahui")
+          "Gagal mengirim: " + (err instanceof Error ? err.message : "Kesalahan tidak diketahui")
         );
       } finally {
         setUploading(false);
@@ -799,7 +827,7 @@ export default function AbsensiClient() {
     const handleKeyDown = (e: KeyboardEvent): void => {
       if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
         e.preventDefault();
-        void submitFace();
+        submitFace();
       }
       if (e.key === "Escape") {
         e.preventDefault();
@@ -859,13 +887,12 @@ export default function AbsensiClient() {
           <div className="backdrop-blur-2xl bg-white/70 dark:bg-gray-950/80 rounded-3xl shadow-2xl ring-1 ring-black/5 dark:ring-white/10 overflow-hidden">
             <div className="p-8 lg:p-12">
               <AnimatePresence mode="wait">
-
                 {/* ── CHECKED-IN SCREEN ── */}
                 {appStep === "checked-in" && checkInSession && (
                   <CheckedInScreen
                     key="checked-in"
                     session={checkInSession}
-                    onCheckOut={() => void handleCheckOut()}
+                    onCheckOut={() => handleCheckOut()}
                     checkingOut={checkingOut}
                   />
                 )}
@@ -903,7 +930,6 @@ export default function AbsensiClient() {
                     </div>
 
                     <AnimatePresence mode="wait">
-
                       {/* ── FACE MODE ── */}
                       {mode === "face" && (
                         <motion.div
@@ -913,7 +939,7 @@ export default function AbsensiClient() {
                           exit={{ opacity: 0, x: -20 }}
                           transition={{ duration: 0.25 }}
                         >
-                          <form onSubmit={(e) => void submitFace(e)} className="space-y-12">
+                          <form onSubmit={(e) => submitFace(e)} className="space-y-12">
                             {/* Nama */}
                             <div className="relative group">
                               <label className="flex items-center gap-3 text-lg font-bold text-gray-800 dark:text-white">
@@ -960,7 +986,7 @@ export default function AbsensiClient() {
                                   <button
                                     type="button"
                                     onClick={() =>
-                                      camera.active ? camera.stop() : void camera.start()
+                                      camera.active ? camera.stop() : camera.start()
                                     }
                                     className="flex-1 px-8 py-5 bg-gradient-to-r from-indigo-600 to-purple-600 text-white font-bold text-lg rounded-2xl shadow-xl hover:shadow-2xl transform hover:scale-105 transition-all flex items-center justify-center gap-3"
                                   >
@@ -1095,7 +1121,6 @@ export default function AbsensiClient() {
                               </h3>
 
                               <div className="relative rounded-3xl overflow-hidden shadow-2xl bg-gradient-to-br from-white to-gray-50 dark:from-gray-900 dark:to-gray-950 border-2 border-gray-200 dark:border-gray-800 p-8">
-                                {/* Overlay QR scanned */}
                                 <AnimatePresence>
                                   {qrScanned && (
                                     <motion.div
@@ -1218,7 +1243,7 @@ export default function AbsensiClient() {
 
                                     <div className="flex gap-3 w-full">
                                       <button
-                                        onClick={() => void refreshQRToken()}
+                                        onClick={() => refreshQRToken()}
                                         className="flex-1 flex items-center justify-center gap-2 px-5 py-3.5 bg-indigo-50 dark:bg-indigo-900/30 border border-indigo-200 dark:border-indigo-700 text-indigo-700 dark:text-indigo-300 font-bold rounded-2xl hover:bg-indigo-100 dark:hover:bg-indigo-900/50 transition-all text-sm"
                                       >
                                         <RefreshCw className="w-4 h-4" />
@@ -1262,7 +1287,7 @@ export default function AbsensiClient() {
                                       </p>
                                     </div>
                                     <button
-                                      onClick={() => void startQRSession()}
+                                      onClick={() => startQRSession()}
                                       disabled={qrSubmitting}
                                       className="w-full flex items-center justify-center gap-3 px-8 py-5 bg-gradient-to-r from-indigo-600 to-purple-600 text-white font-bold text-lg rounded-2xl shadow-xl hover:shadow-2xl transform hover:scale-105 disabled:opacity-60 disabled:cursor-not-allowed transition-all"
                                     >
@@ -1282,22 +1307,16 @@ export default function AbsensiClient() {
                                 )}
                               </div>
 
-                              {/* Info */}
                               <div className="bg-blue-50 dark:bg-blue-900/20 rounded-2xl p-5 border border-blue-200 dark:border-blue-800">
                                 <div className="flex items-start gap-3">
                                   <ShieldCheck className="w-5 h-5 text-blue-600 dark:text-blue-400 mt-0.5 flex-shrink-0" />
                                   <div className="text-sm text-blue-700 dark:text-blue-300 space-y-1">
                                     <p className="font-bold">Cara absen dengan QR:</p>
                                     <ol className="list-decimal list-inside space-y-1 text-blue-600 dark:text-blue-400">
-                                      <li>
-                                        Tekan <b>Buat QR Absensi</b> di laptop
-                                      </li>
+                                      <li>Tekan <b>Buat QR Absensi</b> di laptop</li>
                                       <li>Scan QR dengan kamera HP Anda</li>
                                       <li>Konfirmasi absensi di HP</li>
-                                      <li>
-                                        Laptop otomatis update — QR refresh tiap{" "}
-                                        {QR_REFRESH_INTERVAL}s
-                                      </li>
+                                      <li>Laptop otomatis update — QR refresh tiap {QR_REFRESH_INTERVAL}s</li>
                                     </ol>
                                   </div>
                                 </div>
