@@ -1,3 +1,4 @@
+// app/api/v1/auth/login/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 import { loginSchema } from "@/lib/validation/auth";
@@ -26,7 +27,20 @@ export async function POST(req: NextRequest) {
     const { email, password, rememberMe } = validation.data;
 
     // Cari user
-    const user = await db.user.findUnique({ where: { email } });
+    const user = await db.user.findUnique({ 
+      where: { email },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        password: true,
+        role: true,
+        position: true,
+        createdAt: true,
+        updatedAt: true,
+      }
+    });
+    
     if (!user) {
       return NextResponse.json(
         { success: false, message: "Email atau password salah" }, 
@@ -73,7 +87,7 @@ export async function POST(req: NextRequest) {
       { status: 200 }
     );
 
-    // Set cookie access_token
+    // ✅ Cookie 1: access_token (HttpOnly - untuk auth)
     response.cookies.set({
       name: "access_token",
       value: token,
@@ -84,7 +98,7 @@ export async function POST(req: NextRequest) {
       maxAge: maxAge,
     });
 
-    // Set cookie session untuk fallback (non-httpOnly)
+    // ✅ Cookie 2: absensi_session (non-httpOnly - fallback)
     response.cookies.set({
       name: "absensi_session",
       value: JSON.stringify({
@@ -98,6 +112,39 @@ export async function POST(req: NextRequest) {
       sameSite: isProd ? "none" : "lax",
       path: "/",
       maxAge: maxAge,
+    });
+
+    // ✅ Cookie 3: user_id (non-httpOnly, untuk timer persistensi - TIDAK DIHAPUS saat logout)
+    response.cookies.set({
+      name: "user_id",
+      value: user.id,
+      httpOnly: false,
+      secure: isProd,
+      sameSite: isProd ? "none" : "lax",
+      path: "/",
+      maxAge: 60 * 60 * 24 * 365, // 1 tahun (tetap ada meskipun logout)
+    });
+
+    // ✅ Cookie 4: user_name (non-httpOnly, untuk display name - TIDAK DIHAPUS saat logout)
+    response.cookies.set({
+      name: "user_name",
+      value: encodeURIComponent(user.name),
+      httpOnly: false,
+      secure: isProd,
+      sameSite: isProd ? "none" : "lax",
+      path: "/",
+      maxAge: 60 * 60 * 24 * 365, // 1 tahun
+    });
+
+    // ✅ Cookie 5: user_role (opsional)
+    response.cookies.set({
+      name: "user_role",
+      value: user.role,
+      httpOnly: false,
+      secure: isProd,
+      sameSite: isProd ? "none" : "lax",
+      path: "/",
+      maxAge: 60 * 60 * 24 * 365,
     });
 
     // Update last login
