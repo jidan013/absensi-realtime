@@ -554,7 +554,7 @@ function VerifyQRContent() {
                     <span>Absen Pulang</span>
                   </button>
 
-                  <button
+                  {/* <button
                     onClick={() => {
                       setFaceType("CLOCK_OUT");
                       setShowFaceModal(true);
@@ -564,7 +564,7 @@ function VerifyQRContent() {
                   >
                     <span>😊</span>
                     <span>Face Recognition Absen Pulang</span>
-                  </button>
+                  </button> */}
                 </motion.div>
               )}
 
